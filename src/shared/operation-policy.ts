@@ -1,0 +1,2 @@
+export const OPERATION_TTL_MS = 30 * 60 * 1000;
+export const LARGE_PROMPT_WARNING_TOKENS = 32_000;
