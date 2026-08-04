@@ -1,0 +1,38 @@
+:root {
+  color: #f5f5f7;
+  background: #111214;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body { width: 340px; min-height: 320px; margin: 0; }
+
+button, select { font: inherit; }
+
+.popup-shell { display: flex; min-height: 320px; flex-direction: column; padding: 20px; background: radial-gradient(circle at top right, #252936 0, #111214 44%); }
+.popup-header { margin-bottom: 18px; }
+.eyebrow { color: #9fa8ff; font-size: 11px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
+h1 { display: -webkit-box; overflow: hidden; margin: 7px 0 0; font-size: 18px; line-height: 1.3; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.controls { display: grid; gap: 12px; }
+label { display: grid; gap: 6px; color: #b9bbc2; font-size: 12px; }
+select { width: 100%; border: 1px solid #363941; border-radius: 9px; padding: 9px 10px; color: #f5f5f7; background: #1c1e23; outline: none; }
+select:focus { border-color: #8e99ff; box-shadow: 0 0 0 3px #727fff22; }
+.track-note { color: #858892; font-size: 11px; }
+.destination-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 2px; }
+.destination-grid button { border: 1px solid #727fff55; border-radius: 10px; padding: 11px 8px; color: white; font-weight: 700; cursor: pointer; background: linear-gradient(145deg, #626fe9, #4d59cd); }
+.destination-grid button:hover:not(:disabled) { filter: brightness(1.12); }
+.destination-grid button:disabled { cursor: wait; opacity: .55; }
+.notice { margin-bottom: 14px; border-radius: 9px; padding: 10px 12px; font-size: 12px; line-height: 1.45; }
+.notice.error { border: 1px solid #813f4c; color: #ffd5db; background: #3a2026; }
+.notice.info { border: 1px solid #40466c; color: #dfe2ff; background: #24283d; }
+.operation-panel { display: grid; gap: 10px; }
+.operation-panel p { margin: 0; color: #b9bbc2; font-size: 12px; line-height: 1.45; }
+.operation-panel button { border: 0; border-radius: 9px; padding: 9px 10px; color: #fff; cursor: pointer; background: #3a3d46; }
+.operation-panel .primary-action { background: #5966e8; font-weight: 700; }
+.operation-panel .text-action { justify-self: start; padding-left: 0; color: #aeb1bb; background: transparent; }
+.recovery-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+footer { display: flex; align-items: center; gap: 7px; margin-top: auto; padding-top: 18px; color: #8c8f98; font-size: 11px; }
+footer span { width: 6px; height: 6px; border-radius: 50%; background: #5966e8; }
+.pulse { animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .3; transform: scale(.75); } }

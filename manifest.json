@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "Summarize It",
+  "description": "Send a complete timestamped YouTube transcript to your preferred AI assistant.",
+  "action": {
+    "default_popup": "src/pages/popup/index.html",
+    "default_icon": {
+      "32": "icon-32.png"
+    }
+  },
+  "icons": {
+    "32": "icon-32.png",
+    "128": "icon-128.png"
+  },
+  "permissions": ["activeTab", "alarms", "clipboardWrite", "storage", "unlimitedStorage"],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://www.perplexity.ai/*",
+    "https://perplexity.ai/*",
+    "https://claude.ai/*",
+    "https://gemini.google.com/*",
+    "https://chat.qwen.ai/*",
+    "https://chat.deepseek.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["src/pages/youtube-bridge/index.ts"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://www.perplexity.ai/*",
+        "https://perplexity.ai/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://chat.qwen.ai/*",
+        "https://chat.deepseek.com/*"
+      ],
+      "js": ["src/pages/content/index.ts"],
+      "run_at": "document_idle"
+    }
+  ]
+}
