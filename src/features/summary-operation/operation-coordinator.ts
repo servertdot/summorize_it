@@ -4,6 +4,8 @@ import {
   type SummaryOperationState,
 } from '@src/shared/operation-state';
 
+const DUPLICATE_BLOCKING_STATUS = 'prepared';
+
 export function findDuplicateOperation(
   operations: Iterable<SummaryOperationState>,
   videoId: string,
@@ -12,7 +14,7 @@ export function findDuplicateOperation(
   return Array.from(operations).find((operation) =>
     operation.videoId === videoId
     && operation.destination === destination
-    && !isTerminalOperation(operation),
+    && operation.status === DUPLICATE_BLOCKING_STATUS,
   );
 }
 

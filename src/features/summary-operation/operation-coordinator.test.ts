@@ -20,11 +20,19 @@ function operation(overrides: Partial<SummaryOperationState> = {}): SummaryOpera
 }
 
 describe('operation coordinator', () => {
-  it('deduplicates only an unfinished operation for the same video and destination', () => {
-    const running = operation();
-    expect(findDuplicateOperation([running], 'video', 'chatgpt')).toBe(running);
-    expect(findDuplicateOperation([running], 'video', 'perplexity')).toBeUndefined();
+  it('deduplicates only a prepared operation for the same video and destination', () => {
+    const prepared = operation({ status: 'prepared' });
+    expect(findDuplicateOperation([prepared], 'video', 'chatgpt')).toBe(prepared);
+    expect(findDuplicateOperation([prepared], 'video', 'perplexity')).toBeUndefined();
     expect(findDuplicateOperation([operation({ status: 'success' })], 'video', 'chatgpt')).toBeUndefined();
+  });
+
+  it('allows another summary after the destination tab has opened', () => {
+    expect(findDuplicateOperation([operation({ status: 'prepared' })], 'video', 'chatgpt')).toBeDefined();
+
+    for (const status of ['opening', 'waiting-editor', 'inserting', 'verifying', 'sending', 'recoverable-error'] as const) {
+      expect(findDuplicateOperation([operation({ status })], 'video', 'chatgpt')).toBeUndefined();
+    }
   });
 
   it('does not issue an operation again after sending has started', () => {
