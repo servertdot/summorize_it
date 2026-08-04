@@ -5,7 +5,7 @@ import { payloadChecksum } from '@src/features/handoff/large-payload';
 import { prepareYouTubeSummary } from './transcript-operation';
 
 describe('YouTube summary preparation', () => {
-  it('writes the fixed instruction in the selected summary language', async () => {
+  it('writes the prompt in English and names the selected summary language', async () => {
     const prepared = await prepareYouTubeSummary({
       page: {
         videoId: 'video', title: 'Title', url: 'https://www.youtube.com/watch?v=video', pageLanguage: 'en',
@@ -16,8 +16,8 @@ describe('YouTube summary preparation', () => {
     });
 
     expect(prepared.prompt).toContain('Create a structured summary of this YouTube video.');
+    expect(prepared.prompt).toContain('Write the summary in English.');
     expect(prepared.prompt).toContain('Transcript:');
-    expect(prepared.prompt).not.toContain('Сделай структурированную');
   });
 
   it('uses the active caption track and preserves every caption in timestamped blocks', async () => {
@@ -68,19 +68,19 @@ describe('YouTube summary preparation', () => {
       },
       { start: 39, text: 'Now we move to the second idea.' },
     ]);
-    expect(result.prompt).toContain('Язык ответа: русский');
-    expect(result.prompt).toContain('Название: Resilient systems');
+    expect(result.prompt).toContain('Write the summary in Russian.');
+    expect(result.prompt).toContain('Title: Resilient systems');
     expect(result.prompt).toContain('[0:00] Hello & welcome.');
     expect(result.prompt).toContain('[0:04] This video explains resilient systems without losing the important details.');
     expect(result.prompt).toContain('[0:39] Now we move to the second idea.');
   });
 
   it('preserves a multi-megabyte Unicode transcript without truncation', async () => {
-    const transcript = 'Полный текст 🚀 漢字. '.repeat(110_000);
+    const transcript = 'Complete text 🚀 漢字. '.repeat(110_000);
     const prepared = await prepareYouTubeSummary({
       page: {
         videoId: 'large', title: 'Large', url: 'https://www.youtube.com/watch?v=large', pageLanguage: 'ru',
-        tracks: [{ id: 'ru', languageCode: 'ru', label: 'Русский', kind: 'manual', baseUrl: 'https://www.youtube.com/captions' }],
+        tracks: [{ id: 'ru', languageCode: 'ru', label: 'Russian', kind: 'manual', baseUrl: 'https://www.youtube.com/captions' }],
       },
       summaryLanguage: 'ru',
       fetchCaption: async () => `<text start="0">${transcript}</text>`,

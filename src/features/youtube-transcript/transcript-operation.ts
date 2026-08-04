@@ -56,87 +56,22 @@ const SENTENCE_END = /[.!?。！？]["'’”）』」)]*\s*$/;
 const MAX_BLOCK_SECONDS = 30;
 
 const SUMMARY_LANGUAGE_NAMES: Record<string, string> = {
-  de: 'Deutsch',
+  de: 'German',
   en: 'English',
-  es: 'español',
-  fr: 'français',
-  it: 'italiano',
-  ja: '日本語',
-  ko: '한국어',
-  pt: 'português',
-  ru: 'русский',
-  uk: 'українська',
-  zh: '中文',
-};
-
-const PROMPT_COPY: Record<string, {
-  instruction: string;
-  details: string;
-  responseLanguage: string;
-  title: string;
-  captionLanguage: string;
-  transcript: string;
-}> = {
-  en: {
-    instruction: 'Create a structured summary of this YouTube video.',
-    details: 'Highlight the main points, important details, and conclusions. When referring to fragments, use timestamps from the transcript.',
-    responseLanguage: 'Response language', title: 'Title', captionLanguage: 'Caption language', transcript: 'Transcript',
-  },
-  ru: {
-    instruction: 'Сделай структурированную суммаризацию этого YouTube-видео.',
-    details: 'Выдели основные тезисы, важные детали и выводы. При ссылках на фрагменты используй таймкоды из расшифровки.',
-    responseLanguage: 'Язык ответа', title: 'Название', captionLanguage: 'Язык субтитров', transcript: 'Расшифровка',
-  },
-  uk: {
-    instruction: 'Створи структурований підсумок цього YouTube-відео.',
-    details: 'Виділи головні тези, важливі деталі та висновки. Для посилань на фрагменти використовуй таймкоди з розшифровки.',
-    responseLanguage: 'Мова відповіді', title: 'Назва', captionLanguage: 'Мова субтитрів', transcript: 'Розшифровка',
-  },
-  de: {
-    instruction: 'Erstelle eine strukturierte Zusammenfassung dieses YouTube-Videos.',
-    details: 'Hebe die wichtigsten Aussagen, Details und Schlussfolgerungen hervor. Verwende bei Verweisen die Zeitstempel aus dem Transkript.',
-    responseLanguage: 'Antwortsprache', title: 'Titel', captionLanguage: 'Untertitelsprache', transcript: 'Transkript',
-  },
-  es: {
-    instruction: 'Crea un resumen estructurado de este video de YouTube.',
-    details: 'Destaca las ideas principales, los detalles importantes y las conclusiones. Usa las marcas de tiempo de la transcripción al citar fragmentos.',
-    responseLanguage: 'Idioma de respuesta', title: 'Título', captionLanguage: 'Idioma de subtítulos', transcript: 'Transcripción',
-  },
-  fr: {
-    instruction: 'Crée un résumé structuré de cette vidéo YouTube.',
-    details: 'Mets en évidence les idées principales, les détails importants et les conclusions. Utilise les horodatages de la transcription pour citer des passages.',
-    responseLanguage: 'Langue de réponse', title: 'Titre', captionLanguage: 'Langue des sous-titres', transcript: 'Transcription',
-  },
-  it: {
-    instruction: 'Crea un riepilogo strutturato di questo video YouTube.',
-    details: 'Evidenzia i punti principali, i dettagli importanti e le conclusioni. Usa i timestamp della trascrizione quando citi i passaggi.',
-    responseLanguage: 'Lingua della risposta', title: 'Titolo', captionLanguage: 'Lingua dei sottotitoli', transcript: 'Trascrizione',
-  },
-  pt: {
-    instruction: 'Crie um resumo estruturado deste vídeo do YouTube.',
-    details: 'Destaque os pontos principais, detalhes importantes e conclusões. Use os timestamps da transcrição ao citar trechos.',
-    responseLanguage: 'Idioma da resposta', title: 'Título', captionLanguage: 'Idioma das legendas', transcript: 'Transcrição',
-  },
-  ja: {
-    instruction: 'このYouTube動画の構造化された要約を作成してください。',
-    details: '主なポイント、重要な詳細、結論を示してください。箇所を参照するときは文字起こしのタイムコードを使用してください。',
-    responseLanguage: '回答言語', title: 'タイトル', captionLanguage: '字幕言語', transcript: '文字起こし',
-  },
-  ko: {
-    instruction: '이 YouTube 동영상의 구조화된 요약을 작성하세요.',
-    details: '핵심 요점, 중요한 세부 사항, 결론을 강조하세요. 구간을 언급할 때는 대본의 타임코드를 사용하세요.',
-    responseLanguage: '응답 언어', title: '제목', captionLanguage: '자막 언어', transcript: '대본',
-  },
-  zh: {
-    instruction: '请为此 YouTube 视频创建结构化摘要。',
-    details: '突出主要观点、重要细节和结论。引用片段时，请使用文字稿中的时间码。',
-    responseLanguage: '回复语言', title: '标题', captionLanguage: '字幕语言', transcript: '文字稿',
-  },
+  es: 'Spanish',
+  fr: 'French',
+  it: 'Italian',
+  ja: 'Japanese',
+  ko: 'Korean',
+  pt: 'Portuguese',
+  ru: 'Russian',
+  uk: 'Ukrainian',
+  zh: 'Chinese',
 };
 
 export class TranscriptPreparationError extends Error {
   constructor(public readonly code: 'captions-not-found' | 'caption-fetch-failed') {
-    super(code === 'captions-not-found' ? 'Субтитры не найдены' : 'Не удалось получить субтитры');
+    super(code === 'captions-not-found' ? 'No captions found' : 'Could not retrieve captions');
   }
 }
 
@@ -253,19 +188,18 @@ function composeSummaryPrompt(
 ): string {
   const languageCode = normalizeLanguage(summaryLanguage).split('-')[0];
   const languageName = SUMMARY_LANGUAGE_NAMES[languageCode] ?? summaryLanguage;
-  const copy = PROMPT_COPY[languageCode] ?? PROMPT_COPY.en;
   const transcript = blocks.map((block) => `[${formatTimestamp(block.start)}] ${block.text}`).join('\n\n');
 
   return [
-    copy.instruction,
-    copy.details,
-    `${copy.responseLanguage}: ${languageName}`,
+    'Create a structured summary of this YouTube video.',
+    'Highlight the main points, important details, and conclusions. When referring to specific moments, use timestamps from the transcript.',
+    `Write the summary in ${languageName}.`,
     '',
-    `${copy.title}: ${page.title}`,
+    `Title: ${page.title}`,
     `URL: ${page.url}`,
-    `${copy.captionLanguage}: ${track.languageCode}`,
+    `Caption language: ${track.languageCode}`,
     '',
-    `${copy.transcript}:`,
+    'Transcript:',
     transcript,
   ].join('\n');
 }

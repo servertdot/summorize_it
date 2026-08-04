@@ -70,7 +70,7 @@ describe('YouTube page contract', () => {
       },
     });
 
-    expect(page.accessError).toBe('Видео недоступно: Sign in to confirm your age');
+    expect(page.accessError).toBe('Video unavailable: Sign in to confirm your age');
     expect(page.tracks).toEqual([]);
   });
 });

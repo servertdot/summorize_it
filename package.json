@@ -1,7 +1,7 @@
 {
   "name": "summarize-it",
-  "version": "0.1.0",
-  "description": "Send complete timestamped YouTube transcripts to ChatGPT or Perplexity.",
+  "version": "0.2.0",
+  "description": "Send complete timestamped YouTube transcripts to your preferred AI assistant.",
   "license": "MIT",
   "scripts": {
     "build": "vite build --config vite.config.chrome.ts",

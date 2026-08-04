@@ -39,7 +39,7 @@ describe('large payload handoff', () => {
       now: () => 1_000,
       ttlMs: 30 * 60 * 1_000,
     });
-    const prompt = 'Начало 🚀 — middle — 終わり'.repeat(20);
+    const prompt = 'Start 🚀 — middle — 終わり'.repeat(20);
 
     const saved = await handoff.save(prompt, 'chatgpt');
 
@@ -54,7 +54,7 @@ describe('large payload handoff', () => {
 
     await handoff.complete('operation-1');
 
-    await expect(handoff.read('operation-1')).rejects.toThrow('Операция не найдена');
+    await expect(handoff.read('operation-1')).rejects.toThrow('Operation not found');
     expect(storage.values.size).toBe(0);
   });
 
@@ -69,7 +69,7 @@ describe('large payload handoff', () => {
     await handoff.save('complete payload', 'perplexity');
     storage.values.delete('summary:operation-2:chunk:1');
 
-    await expect(handoff.read('operation-2')).rejects.toThrow('Данные операции повреждены');
+    await expect(handoff.read('operation-2')).rejects.toThrow('Operation data is corrupted');
   });
 
   it('moves a multi-megabyte prompt without oversized storage operations', async () => {
@@ -80,7 +80,7 @@ describe('large payload handoff', () => {
       now: () => 1_000,
       ttlMs: 30 * 60 * 1_000,
     });
-    const prompt = 'абв🚀'.repeat(700_000);
+    const prompt = 'abc🚀'.repeat(700_000);
 
     await handoff.save(prompt, 'chatgpt');
 
@@ -96,7 +96,7 @@ describe('large payload handoff', () => {
 
     await handoff.cancel(first.id);
 
-    await expect(handoff.read(first.id)).rejects.toThrow('Операция не найдена');
+    await expect(handoff.read(first.id)).rejects.toThrow('Operation not found');
     await expect(handoff.read(second.id)).resolves.toBe('second');
   });
 
@@ -107,7 +107,7 @@ describe('large payload handoff', () => {
     const saved = await handoff.save('payload', 'chatgpt');
     now = saved.expiresAt;
 
-    await expect(handoff.read(saved.id)).rejects.toThrow('Операция истекла');
+    await expect(handoff.read(saved.id)).rejects.toThrow('Operation expired');
     expect(storage.values.size).toBe(0);
   });
 });

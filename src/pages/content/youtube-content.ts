@@ -35,13 +35,13 @@ export function registerYouTubeContent(): void {
       storedOperationId = result.operationId;
       if (getCurrentYouTubePage().videoId !== page.videoId) {
         await handoff.cancel(result.operationId);
-        throw new Error('Видео изменилось во время получения субтитров');
+        throw new Error('The video changed while captions were being retrieved');
       }
       const response = await sendBackgroundMessage({
         type: 'REGISTER_OPERATION', operation: result, destination: message.destination,
         videoId: page.videoId, videoTitle: page.title, expiresAt: result.expiresAt,
       });
-      if (!response.ok || !response.operation) throw new Error(response.error || 'Не удалось сохранить операцию');
+      if (!response.ok || !response.operation) throw new Error(response.error || 'Could not save the operation');
       storedOperationId = undefined;
       return { ok: true, operation: response.operation };
     } catch (cause) {
@@ -58,7 +58,7 @@ export function registerYouTubeContent(): void {
 
 function getCurrentYouTubePage() {
   if (location.pathname !== '/watch' || !new URL(location.href).searchParams.get('v')) {
-    throw new Error('Откройте обычное YouTube-видео');
+    throw new Error('Open a standard YouTube video');
   }
   const page = readYouTubePage(document, location.href, requestYouTubeSnapshot());
   if (page.accessError) throw new Error(page.accessError);
@@ -77,14 +77,14 @@ function requestYouTubeSnapshot(): YouTubeBridgeSnapshot {
 async function fetchCaptionXml(baseUrl: string, signal: AbortSignal): Promise<string> {
   const url = new URL(baseUrl);
   if (url.protocol !== 'https:' || !(url.hostname === 'youtube.com' || url.hostname.endsWith('.youtube.com'))) {
-    throw new Error('Некорректный адрес субтитров');
+    throw new Error('Invalid captions URL');
   }
   const response = await fetch(url, { credentials: 'include', signal });
-  if (!response.ok) throw new Error('Не удалось получить субтитры');
+  if (!response.ok) throw new Error('Could not retrieve captions');
   return response.text();
 }
 
 function errorMessage(cause: unknown): string {
-  if (cause instanceof DOMException && cause.name === 'AbortError') return 'Операция отменена из-за смены видео';
-  return cause instanceof Error ? cause.message : 'Неизвестная ошибка';
+  if (cause instanceof DOMException && cause.name === 'AbortError') return 'Operation cancelled because the video changed';
+  return cause instanceof Error ? cause.message : 'Unknown error';
 }

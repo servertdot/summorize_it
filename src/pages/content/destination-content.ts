@@ -24,33 +24,33 @@ export async function runDestinationDelivery(destination: AiDestination): Promis
   }
 
   const deadline = Math.min(operation.expiresAt, Date.now() + OPERATION_TTL_MS);
-  await update(operation.id, 'waiting-editor', 'Ожидаем редактор или вход в аккаунт…');
+  await update(operation.id, 'waiting-editor', 'Waiting for the editor or sign-in…');
   while (Date.now() < deadline) {
     if (await isCancelled(operation.id)) return;
     const rejection = detectDestinationRejection(document);
     if (rejection) {
-      await update(operation.id, 'recoverable-error', `${rejection}. Запрос сохранён для повторения или копирования.`);
+      await update(operation.id, 'recoverable-error', `${rejection}. The prompt was saved so you can retry or copy it.`);
       return;
     }
 
-    await update(operation.id, 'inserting', 'Вставляем полный запрос…');
+    await update(operation.id, 'inserting', 'Inserting the complete prompt…');
     const result = preparePromptForDelivery(document, prompt, destination);
     if (result.status === 'editor-not-found') {
-      await update(operation.id, 'waiting-editor', 'Ожидаем редактор или вход в аккаунт…');
+      await update(operation.id, 'waiting-editor', 'Waiting for the editor or sign-in…');
       await delay(1_000);
       continue;
     }
     if (result.status === 'incomplete-insertion') {
-      await update(operation.id, 'recoverable-error', 'Полный запрос не поместился в поле. Отправка остановлена; запрос сохранён.');
+      await update(operation.id, 'recoverable-error', 'The complete prompt did not fit in the field. Sending was stopped and the prompt was saved.');
       return;
     }
     if (result.status === 'send-unavailable') {
-      await update(operation.id, 'recoverable-error', 'Запрос вставлен полностью, но отправка недоступна. Можно отправить вручную или повторить.');
+      await update(operation.id, 'recoverable-error', 'The complete prompt was inserted, but sending is unavailable. You can send it manually or retry.');
       return;
     }
 
-    await update(operation.id, 'verifying', 'Полный запрос проверен. Отправляем…');
-    const authorization = await update(operation.id, 'sending', 'Запрос отправляется. Подтверждаем запуск…');
+    await update(operation.id, 'verifying', 'Complete prompt verified. Sending…');
+    const authorization = await update(operation.id, 'sending', 'Prompt is being sent. Confirming submission…');
     if (!authorization.ok) return;
     const marker = createDeliveryMarker(document, destination);
     result.send();
@@ -58,13 +58,13 @@ export async function runDestinationDelivery(destination: AiDestination): Promis
     if (confirmation === 'confirmed') {
       await sendBackgroundMessage({ type: 'COMPLETE_OPERATION', operationId: operation.id });
     } else if (confirmation === 'rejected') {
-      await update(operation.id, 'recoverable-error', 'Сервис отклонил запрос из-за его длины. Полный запрос сохранён.');
+      await update(operation.id, 'recoverable-error', 'The service rejected the prompt because it is too long. The complete prompt was saved.');
     } else if (confirmation === 'timeout') {
-      await update(operation.id, 'recoverable-error', 'Сервис не подтвердил запуск. Полный запрос сохранён.');
+      await update(operation.id, 'recoverable-error', 'The service did not confirm submission. The complete prompt was saved.');
     }
     return;
   }
-  await update(operation.id, 'recoverable-error', 'Время ожидания входа истекло. Полный запрос сохранён.');
+  await update(operation.id, 'recoverable-error', 'Sign-in timed out. The complete prompt was saved.');
 }
 
 async function waitForDeliveryConfirmation(
@@ -107,5 +107,5 @@ async function update(
   return sendBackgroundMessage({ type: 'UPDATE_OPERATION', operationId, status, statusMessage });
 }
 
-function errorMessage(cause: unknown): string { return cause instanceof Error ? cause.message : 'Неизвестная ошибка'; }
+function errorMessage(cause: unknown): string { return cause instanceof Error ? cause.message : 'Unknown error'; }
 function delay(milliseconds: number): Promise<void> { return new Promise((resolve) => window.setTimeout(resolve, milliseconds)); }

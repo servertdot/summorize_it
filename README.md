@@ -5,7 +5,7 @@
 <h1 align="center">Summarize It</h1>
 
 <p align="center">
-  Prepare complete, timestamped YouTube transcripts for ChatGPT or Perplexity.
+  Prepare complete, timestamped YouTube transcripts for your preferred AI assistant.
 </p>
 
 ## What it does
@@ -16,13 +16,14 @@ Summarize It is a Chrome extension that turns a YouTube transcript into a ready-
 - Groups transcript segments into readable, timestamped blocks.
 - Preserves the complete transcript without hidden shortening or truncation.
 - Lets you choose the caption track and summary language.
-- Supports ChatGPT and Perplexity through their web interfaces.
+- Supports ChatGPT, Perplexity, Claude, Gemini, Qwen, and DeepSeek through their web interfaces.
+- Lets you choose which AI services appear as quick-action buttons.
 - Leaves the complete prepared request in the editor for you to review and submit.
 
 ## How it works
 
 1. Open a YouTube video that has captions.
-2. Open Summarize It and choose ChatGPT or Perplexity.
+2. Open Summarize It and choose which AI service buttons you want to see.
 3. Select the caption track and the language for the summary.
 4. Start the handoff, review the prepared request, and press Enter to submit it.
 

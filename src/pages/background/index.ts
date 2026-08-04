@@ -9,7 +9,7 @@ import {
   remainingTtlMinutes,
 } from '@src/features/summary-operation/operation-coordinator';
 import { browserLocalStorage } from '@src/platform/browser-storage';
-import { DESTINATION_NAMES } from '@src/shared/destinations';
+import { DESTINATION_NAMES, isAiDestination } from '@src/shared/destinations';
 import { isBackgroundRequest, type BackgroundRequest, type OperationResponse } from '@src/shared/messages';
 import {
   isRecoverableOperation,
@@ -21,6 +21,10 @@ import {
 const DESTINATION_URL: Record<AiDestination, string> = {
   chatgpt: 'https://chatgpt.com/',
   perplexity: 'https://www.perplexity.ai/',
+  claude: 'https://claude.ai/new',
+  gemini: 'https://gemini.google.com/app',
+  qwen: 'https://chat.qwen.ai/',
+  deepseek: 'https://chat.deepseek.com/',
 };
 const OPERATIONS_KEY = 'summary:operation-registry';
 let registryQueue = Promise.resolve();
@@ -35,7 +39,7 @@ browser.runtime.onMessage.addListener(async (message: unknown, sender: Runtime.M
       return openDestination(message.operationId, message.destination);
     case 'RETRY_OPERATION': {
       const operation = await getOperation(message.operationId);
-      return operation ? openDestination(operation.id, operation.destination) : failure('Операция не найдена');
+      return operation ? openDestination(operation.id, operation.destination) : failure('Operation not found');
     }
     case 'CLAIM_OPERATION':
       return claimOperation(sender.tab?.id, message.destination);
@@ -47,7 +51,7 @@ browser.runtime.onMessage.addListener(async (message: unknown, sender: Runtime.M
     case 'COMPLETE_OPERATION':
       await new LargePayloadStore(browserLocalStorage).complete(message.operationId);
       await browser.alarms.clear(expiryAlarm(message.operationId));
-      return updateOperation(message.operationId, { status: 'success', statusMessage: 'Запрос отправлен', targetTabId: undefined });
+      return updateOperation(message.operationId, { status: 'success', statusMessage: 'Prompt sent', targetTabId: undefined });
     case 'CANCEL_OPERATION':
       return cancelOperation(message.operationId);
     case 'GET_ACTIVE_OPERATION':
@@ -76,7 +80,7 @@ async function registerOperation(
     const duplicate = findDuplicateOperation(Object.values(registry), message.videoId, message.destination);
     if (duplicate) {
       await new LargePayloadStore(browserLocalStorage).cancel(message.operation.operationId);
-      return { registry, result: { ok: false, duplicate: true, operation: duplicate, error: 'Такая операция уже выполняется' } };
+      return { registry, result: { ok: false, duplicate: true, operation: duplicate, error: 'This operation is already in progress' } };
     }
 
     const operation: SummaryOperationState = {
@@ -90,7 +94,7 @@ async function registerOperation(
       createdAt: Date.now(),
       expiresAt: message.expiresAt,
       status: 'prepared',
-      statusMessage: 'Расшифровка подготовлена',
+      statusMessage: 'Transcript prepared',
     };
     return { registry: { ...registry, [operation.id]: operation }, result: { ok: true, operation } };
   });
@@ -104,17 +108,17 @@ async function registerOperation(
 
 async function openDestination(operationId: string, destination: AiDestination): Promise<OperationResponse> {
   const operation = await getOperation(operationId);
-  if (!operation || operation.destination !== destination) return failure('Операция не найдена');
+  if (!operation || operation.destination !== destination) return failure('Operation not found');
   if (!isRecoverableOperation(operation)) {
-    return failure('Операция уже запущена');
+    return failure('Operation already started');
   }
   try {
     if (operation.targetTabId !== undefined) await browser.storage.session.remove(targetKey(operation.targetTabId));
     const tab = await browser.tabs.create({ url: DESTINATION_URL[destination], active: true });
-    if (tab.id === undefined) throw new Error('Целевая вкладка не создана');
+    if (tab.id === undefined) throw new Error('Could not create the destination tab');
     await browser.storage.session.set({ [targetKey(tab.id)]: { operationId, destination } });
     return updateOperation(operationId, {
-      status: 'opening', statusMessage: `Открываем ${DESTINATION_NAMES[destination]}…`, targetTabId: tab.id,
+      status: 'opening', statusMessage: `Opening ${DESTINATION_NAMES[destination]}…`, targetTabId: tab.id,
     });
   } catch (cause) {
     return updateOperation(operationId, {
@@ -124,14 +128,14 @@ async function openDestination(operationId: string, destination: AiDestination):
 }
 
 async function claimOperation(tabId: number | undefined, destination: AiDestination): Promise<OperationResponse> {
-  if (tabId === undefined) return failure('Целевая вкладка недоступна');
+  if (tabId === undefined) return failure('Destination tab is unavailable');
   const stored = await browser.storage.session.get(targetKey(tabId));
   const target = stored[targetKey(tabId)];
-  if (!isTarget(target) || target.destination !== destination) return failure('Операция не назначена этой вкладке');
+  if (!isTarget(target) || target.destination !== destination) return failure('The operation is not assigned to this tab');
   const operation = await getOperation(target.operationId);
-  if (!operation) return failure('Операция не найдена');
-  if (!canClaimOperationInTab(operation, tabId)) return failure('Операция уже была выдана другой вкладке');
-  return updateOperation(operation.id, { status: 'waiting-editor', statusMessage: 'Ожидаем редактор или вход в аккаунт…' });
+  if (!operation) return failure('Operation not found');
+  if (!canClaimOperationInTab(operation, tabId)) return failure('The operation was already assigned to another tab');
+  return updateOperation(operation.id, { status: 'waiting-editor', statusMessage: 'Waiting for the editor or sign-in…' });
 }
 
 async function handleTargetTabClosed(tabId: number): Promise<void> {
@@ -148,7 +152,7 @@ async function handleTargetTabClosed(tabId: number): Promise<void> {
 
 async function expireOperation(operationId: string): Promise<void> {
   await new LargePayloadStore(browserLocalStorage).complete(operationId);
-  await updateOperation(operationId, { status: 'failed', statusMessage: 'Время операции истекло', targetTabId: undefined });
+  await updateOperation(operationId, { status: 'failed', statusMessage: 'Operation expired', targetTabId: undefined });
 }
 
 async function getActiveOperation(): Promise<SummaryOperationState | undefined> {
@@ -171,8 +175,8 @@ async function getOperation(operationId: string): Promise<SummaryOperationState 
 async function updateOperation(operationId: string, changes: Partial<SummaryOperationState>): Promise<OperationResponse> {
   return withRegistry(async (registry) => {
     const operation = registry[operationId];
-    if (!operation) return { registry, result: failure('Операция не найдена') };
-    if (isTerminalOperation(operation)) return { registry, result: failure('Операция уже завершена') };
+    if (!operation) return { registry, result: failure('Operation not found') };
+    if (isTerminalOperation(operation)) return { registry, result: failure('Operation already completed') };
     const updated = { ...operation, ...changes };
     return { registry: { ...registry, [operationId]: updated }, result: { ok: true, operation: updated } };
   });
@@ -181,10 +185,10 @@ async function updateOperation(operationId: string, changes: Partial<SummaryOper
 async function cancelOperation(operationId: string): Promise<OperationResponse> {
   const response = await withRegistry<OperationResponse>(async (registry) => {
     const operation = registry[operationId];
-    if (!operation) return { registry, result: failure('Операция не найдена') };
-    if (!canCancelOperation(operation)) return { registry, result: failure('Запрос уже отправляется или операция завершена') };
+    if (!operation) return { registry, result: failure('Operation not found') };
+    if (!canCancelOperation(operation)) return { registry, result: failure('The prompt is already being sent or the operation has completed') };
     const cancelled: SummaryOperationState = {
-      ...operation, status: 'cancelled', statusMessage: 'Операция отменена', targetTabId: undefined,
+      ...operation, status: 'cancelled', statusMessage: 'Operation cancelled', targetTabId: undefined,
     };
     return { registry: { ...registry, [operationId]: cancelled }, result: { ok: true, operation: cancelled } };
   });
@@ -220,9 +224,9 @@ async function withRegistry<T>(
 function targetKey(tabId: number): string { return `summary:target:${tabId}`; }
 function expiryAlarm(operationId: string): string { return `summary:expire:${operationId}`; }
 function failure(error: string): OperationResponse { return { ok: false, error }; }
-function errorMessage(cause: unknown): string { return cause instanceof Error ? cause.message : 'Не удалось открыть вкладку'; }
+function errorMessage(cause: unknown): string { return cause instanceof Error ? cause.message : 'Could not open the tab'; }
 function isTarget(value: unknown): value is { operationId: string; destination: AiDestination } {
   if (!value || typeof value !== 'object') return false;
   const target = value as { operationId?: unknown; destination?: unknown };
-  return typeof target.operationId === 'string' && (target.destination === 'chatgpt' || target.destination === 'perplexity');
+  return typeof target.operationId === 'string' && isAiDestination(target.destination);
 }

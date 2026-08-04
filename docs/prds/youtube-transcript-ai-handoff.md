@@ -1,140 +1,139 @@
-# PRD: Суммаризация YouTube-видео через ChatGPT или Perplexity
+# PRD: Summarize YouTube videos with popular AI services
 
 ## Problem Statement
 
-Пользователь смотрит YouTube-видео с доступными субтитрами и хочет быстро получить его суммаризацию в привычном ИИ-сервисе. Сейчас для этого приходится вручную открывать расшифровку, копировать большой объём текста, переходить в ChatGPT или Perplexity, вставлять текст и отправлять запрос. Длинные расшифровки делают этот процесс медленным и ненадёжным: текст легко скопировать не полностью, потерять при переходе между вкладками или не вставить из-за ограничений интерфейса.
+A user watching a captioned YouTube video wants a quick summary in a familiar AI service. Today, this requires opening the transcript, copying a large amount of text, switching to an AI assistant, pasting the text, and submitting a prompt. Long transcripts make this slow and unreliable: text can be copied incompletely, lost between tabs, or rejected by the destination interface.
 
-Нужно превратить существующий технический каркас расширения в узкий продукт: на поддерживаемой странице YouTube получить все доступные субтитры выбранной дорожки, подготовить запрос на суммаризацию, открыть выбранный пользователем ИИ-сервис, полностью перенести туда запрос и сразу отправить его. Расширение не должно само вызывать API языковых моделей, хранить API-ключи или показывать собственный результат суммаризации.
+The existing extension scaffold should become a focused product. On a supported YouTube page, it retrieves every available caption from the selected track, prepares a summary prompt, opens the selected AI service, transfers the complete prompt, and submits it immediately. The extension does not call model APIs, store API keys, or display its own generated summary.
 
 ## Solution
 
-Расширение предоставляет компактный popup на странице YouTube-видео. Оно определяет наличие субтитров, выбирает наиболее подходящую дорожку по предсказуемым правилам и при необходимости позволяет сменить её. Пользователь выбирает сохраняемый язык суммаризации и запускает операцию одной из двух кнопок: ChatGPT или Perplexity.
+The extension provides a compact popup on YouTube video pages. It detects available captions, selects the best track using predictable rules, and lets the user change it when needed. The user selects a persistent summary language, chooses which supported AI services appear, and starts the operation with the corresponding quick-action button.
 
-Расширение извлекает таймкодированные сегменты субтитров, объединяет их в читаемые блоки с таймкодом начала каждого блока и нормализует без смысловой обрезки. Оно добавляет короткую фиксированную инструкцию на выбранном языке суммаризации и метаданные видео, а затем сохраняет подготовленный запрос во временное внутреннее хранилище. После этого оно открывает новую вкладку выбранного ИИ-сервиса. Контентный адаптер этой страницы получает запрос частями, собирает его в поле ввода, проверяет, что весь текст вставлен, и нажимает отправку. Системный буфер обмена не является основным каналом передачи и не перезаписывается.
+The extension extracts timestamped caption segments, groups them into readable blocks with a starting timestamp, and removes technical noise without semantic truncation. It adds a short, fixed English instruction, explicitly tells the service which selected language to use for the summary, and includes video metadata. The prepared prompt is stored temporarily inside the extension. A new destination tab retrieves the prompt in chunks, assembles it in the editor, verifies that the full text was inserted, and submits it. The system clipboard is not the primary transport and is not overwritten during the normal flow.
 
-Большие расшифровки передаются между частями расширения чанками и никогда молча не обрезаются. Если сайт ИИ не принимает объём, меняет интерфейс, требует входа или блокирует автоматическую отправку, полный подготовленный запрос сохраняется во временном хранилище, а пользователь получает понятный способ повторить вставку или скопировать текст вручную. Расширение гарантирует полноту передачи до поля ввода, но не может гарантировать принятие текста конкретной моделью: лимиты зависят от сервиса, тарифа и выбранной модели.
+Large transcripts move between extension components in chunks and are never silently truncated. If the destination rejects the length, changes its interface, requires sign-in, or blocks automatic submission, the complete prompt remains in temporary storage and the user can retry or copy it manually. The extension guarantees complete transfer to the editor, but it cannot guarantee that a particular model accepts the prompt because limits vary by service, plan, and model.
 
 ## User Stories
 
-1. As a пользователь YouTube, I want расширение распознавало обычную страницу видео, so that действие суммаризации было доступно только в подходящем контексте.
-2. As a пользователь YouTube, I want видеть, найдены ли у текущего видео субтитры, so that я заранее понимал, можно ли запустить суммаризацию.
-3. As a пользователь YouTube, I want расширение получало всю доступную расшифровку, so that итоговая суммаризация учитывала видео целиком.
-4. As a пользователь YouTube, I want использовать как авторские, так и автоматически созданные субтитры, so that функция работала на максимально возможном числе видео.
-5. As a пользователь многоязычного видео, I want видеть язык выбранной дорожки, so that я понимал, какой текст будет отправлен.
-6. As a пользователь многоязычного видео, I want выбрать другую доступную дорожку субтитров, so that ИИ получал нужную мне версию исходного текста.
-7. As a пользователь, I want расширение предлагало разумную дорожку по умолчанию, so that в типичном случае мне не приходилось ничего настраивать.
-8. As a пользователь, I want авторские субтитры предпочитались автоматическим при одинаковом языке, so that исходный текст был качественнее.
-9. As a пользователь, I want сразу видеть отдельные действия для ChatGPT и Perplexity, so that запуск в выбранном сервисе требовал одного нажатия.
-10. As a пользователь ChatGPT, I want открыть новую беседу ChatGPT с подготовленным запросом, so that текущие беседы не смешивались с новым видео.
-11. As a пользователь Perplexity, I want открыть новую страницу запроса Perplexity с подготовленным текстом, so that я мог использовать привычный сервис.
-12. As a пользователь, I want в запрос автоматически добавлялись название и URL видео, so that результат сохранял контекст источника.
-13. As a пользователь, I want в запрос добавлялась ясная инструкция суммаризировать видео, so that мне не приходилось дописывать её вручную.
-14. As a пользователь, I want выбрать и сохранить язык суммаризации независимо от языка субтитров, so that последующие результаты создавались на удобном мне языке без повторной настройки.
-15. As a пользователь, I want повторяющиеся пробелы и служебные символы субтитров очищались, so that запрос не расходовал контекст на технический шум.
-16. As a пользователь, I want содержательный текст субтитров не перефразировался до отправки, so that ИИ получал исходный материал без скрытых изменений.
-17. As a пользователь, I want каждый читаемый блок расшифровки содержал таймкод начала, so that ИИ мог связывать тезисы суммаризации с местами в видео.
-18. As a пользователь длинного видео, I want расширение передавало расшифровку частями внутри расширения, so that ограничения одного сообщения между компонентами не приводили к потере текста.
-19. As a пользователь очень длинного видео, I want расширение проверяло полноту собранного запроса перед отправкой, so that частичная вставка не выглядела успешной.
-20. As a пользователь очень длинного видео, I want видеть размер подготовленного запроса и предупреждение о возможном лимите ИИ-сервиса, so that внешнее отклонение запроса не было неожиданностью.
-21. As a пользователь, I want расширение никогда молча не обрезало расшифровку, so that я мог доверять полноте результата.
-22. As a пользователь, I want запрос отправлялся автоматически после успешной полной вставки, so that процесс действительно занимал одно действие.
-23. As a пользователь, I want автоматическая отправка не выполнялась при неполной вставке, so that ИИ не суммаризировал повреждённый текст.
-24. As a пользователь, I want при изменении интерфейса ИИ-сервиса получить понятную ошибку, so that я понимал причину сбоя.
-25. As a пользователь, I want при невозможности автоотправки увидеть весь запрос уже вставленным в поле, so that я мог отправить его вручную.
-26. As a пользователь, I want при невозможности автовставки скопировать полный запрос одной кнопкой, so that работа не терялась.
-27. As a пользователь без активной сессии ChatGPT или Perplexity, I want расширение дождалось входа и позволило продолжить передачу, so that авторизация не уничтожала подготовленный запрос.
-28. As a пользователь, I want повторный запуск не создавал случайно несколько одинаковых отправок, so that в ИИ-сервисе не появлялись дубликаты.
-29. As a пользователь, I want видеть состояния «получаем субтитры», «открываем сервис», «вставляем» и «отправлено», so that длинная операция не казалась зависшей.
-30. As a пользователь, I want отменить ещё не отправленную операцию, so that ошибочный выбор видео или сервиса не приводил к нежелательному запросу.
-31. As a пользователь видео без субтитров, I want получить конкретное сообщение об отсутствии дорожек, so that я не ожидал невозможного результата.
-32. As a пользователь недоступного, приватного или возрастного видео, I want получить различимое сообщение об ошибке доступа, so that я мог устранить причину или отказаться от операции.
-33. As a пользователь, I want временно сохранённый запрос удалялся после подтверждённой отправки, so that расширение не накапливало просмотренный контент.
-34. As a пользователь, I want незавершённый запрос автоматически удалялся через 30 минут, so that старые расшифровки не оставались в браузере бессрочно.
-35. As a пользователь, I want расширение не отправляло субтитры на собственный сервер разработчика, so that данные шли только на выбранный мной ИИ-сервис.
-36. As a пользователь, I want расширение не перезаписывало мой системный буфер обмена в штатном сценарии, so that текущие скопированные данные сохранялись.
-37. As a пользователь, I want разрешения расширения были ограничены YouTube, ChatGPT и Perplexity, so that оно не получало доступ ко всем посещаемым сайтам.
-38. As a пользователь, I want после навигации YouTube без полной перезагрузки расширение распознавало новое видео, so that функция работала в одностраничном интерфейсе YouTube.
-39. As a пользователь, I want повторно суммаризировать текущее видео в другом ИИ-сервисе, so that я мог сравнить результаты.
-40. As a пользователь клавиатуры, I want все элементы popup были доступны без мыши, so that расширение оставалось удобным и доступным.
-41. As a пользователь экранного диктора, I want статусы и ошибки объявлялись доступным способом, so that я понимал ход операции.
-42. As a разработчик расширения, I want изменения разметки YouTube были изолированы в одном адаптере, so that поломку можно было исправить без переписывания продукта.
-43. As a разработчик расширения, I want изменения редактора ChatGPT были изолированы от Perplexity, so that каждый интеграционный адаптер обновлялся независимо.
-44. As a разработчик расширения, I want диагностика различала получение, хранение, вставку и отправку, so that пользовательские сбои можно было локализовать без записи содержимого расшифровки в логи.
-45. As a разработчик расширения, I want зафиксировать происхождение перенесённой логики Obsidian Web Clipper, so that соблюдалась MIT-лицензия и было понятно, с какой версией сравнивать поведение.
+1. As a YouTube user, I want the extension to recognize a standard video page so summarization is available only in the right context.
+2. As a YouTube user, I want to know whether the current video has captions so I can tell whether summarization is possible.
+3. As a YouTube user, I want the extension to retrieve the complete available transcript so the summary covers the whole video.
+4. As a YouTube user, I want both manual and auto-generated captions supported so the feature works on as many videos as possible.
+5. As a multilingual-video viewer, I want to see the selected track's language so I know which source text will be sent.
+6. As a multilingual-video viewer, I want to choose another available caption track so the AI receives the source version I need.
+7. As a user, I want a sensible default track so typical use requires no setup.
+8. As a user, I want manual captions preferred over auto-generated captions in the same language so the source is higher quality.
+9. As a user, I want separate actions for my chosen AI services so the selected service starts with one click.
+10. As a ChatGPT user, I want a new conversation with the prepared prompt so existing conversations are not mixed with the new video.
+11. As a Perplexity user, I want a new query page with the prepared prompt so I can use my familiar service.
+12. As a user, I want the video title and URL added automatically so the result retains source context.
+13. As a user, I want a clear summary instruction added automatically so I do not need to write one.
+14. As a user, I want to select and save a summary language independently of the caption language so future results use my preferred language without repeated setup.
+15. As a user, I want repeated whitespace and caption control characters removed so the prompt does not waste context on noise.
+16. As a user, I want meaningful caption text preserved without paraphrasing before submission so the AI receives unchanged source material.
+17. As a user, I want every readable transcript block to include its starting timestamp so the AI can connect summary points to moments in the video.
+18. As a long-video viewer, I want the extension to transfer the transcript internally in chunks so component message limits do not lose text.
+19. As a very-long-video viewer, I want the assembled prompt verified before submission so a partial insertion cannot look successful.
+20. As a very-long-video viewer, I want to see the prompt size and a warning about possible service limits so rejection is not surprising.
+21. As a user, I want the extension never to silently truncate the transcript so I can trust that it is complete.
+22. As a user, I want automatic submission after a complete insertion so the process truly takes one action.
+23. As a user, I want automatic submission blocked after an incomplete insertion so the AI does not summarize corrupted text.
+24. As a user, I want a clear error when an AI service changes its interface so I understand the failure.
+25. As a user, I want the complete prompt left in the editor when automatic submission fails so I can submit it manually.
+26. As a user, I want to copy the complete prompt with one button when automatic insertion fails so the work is not lost.
+27. As a signed-out AI-service user, I want the extension to wait for sign-in and continue afterward so authentication does not destroy the prompt.
+28. As a user, I want retries to avoid accidental duplicate submissions so duplicate conversations are not created.
+29. As a user, I want visible retrieval, opening, insertion, and sent states so a long operation does not look frozen.
+30. As a user, I want to cancel an operation that has not been sent so a mistaken video or service choice does not create an unwanted prompt.
+31. As a user of a video without captions, I want a specific no-captions message so I do not expect an impossible result.
+32. As a user of an unavailable, private, or age-restricted video, I want a distinct access error so I can fix the cause or stop.
+33. As a user, I want temporary prompt data deleted after confirmed submission so watched content does not accumulate.
+34. As a user, I want unfinished prompts deleted automatically after 30 minutes so old transcripts are not stored indefinitely.
+35. As a user, I want captions sent only to my chosen AI service, never to the developer's server.
+36. As a user, I want the normal flow to preserve my system clipboard.
+37. As a user, I want extension permissions limited to YouTube and supported AI-service domains rather than every visited site.
+38. As a user, I want the extension to detect a new video after YouTube SPA navigation so it continues to work without a full page reload.
+39. As a user, I want to summarize the current video again in another AI service so I can compare results.
+40. As a keyboard user, I want every popup control available without a mouse.
+41. As a screen-reader user, I want statuses and errors announced accessibly so I understand operation progress.
+42. As an extension developer, I want YouTube markup dependencies isolated in one adapter so a break can be fixed without rewriting the product.
+43. As an extension developer, I want editor changes in one AI service isolated from the others so each integration can be updated independently.
+44. As an extension developer, I want diagnostics to distinguish retrieval, storage, insertion, and submission so failures can be located without logging transcript contents.
+45. As an extension developer, I want the origin of adapted Obsidian Web Clipper logic documented so the MIT license is honored and behavioral comparisons use a known version.
 
 ## Implementation Decisions
 
-- Первая версия ориентирована на Chromium-браузеры и Manifest V3. Поддержка Firefox откладывается до стабилизации интеграций с целевыми сайтами.
-- Из существующего каркаса остаются только popup, фоновый service worker и целевые content scripts. Переопределение новой вкладки, DevTools, side panel, демонстрационные options-страницы, boilerplate-компоненты и глобальный content script для всех сайтов удаляются.
-- Разрешения ограничиваются хранилищем и необходимыми доменами YouTube, ChatGPT и Perplexity. Доступ ко всем URL не используется. Разрешение на увеличенное локальное хранилище допустимо только для временной передачи длинных расшифровок.
-- Модуль `YouTube Transcript Source` является глубоким адаптером. Его публичный контракт принимает контекст текущего видео и возвращает метаданные видео, список дорожек и упорядоченные сегменты с началом, длительностью и текстом. Детали DOM и внутренних данных YouTube не выходят за границы модуля.
-- Логика получения и разбора субтитров портируется из Obsidian Web Clipper 1.7.1 на commit `c2fbae9645332ecf8d05dcf281483693b5054213` и его зависимости Defuddle 0.19.2; весь Reader не переносится. Существенно перенесённые части сохраняют требуемое уведомление MIT; бренд, иконки и маркетинговые материалы Obsidian не копируются.
-- Стратегия выбора дорожки по умолчанию: активная в проигрывателе дорожка, если её можно определить; иначе дорожка на языке страницы/видео; иначе авторская дорожка; иначе первая доступная автоматическая дорожка. При наличии нескольких дорожек popup показывает компактный выбор языка и типа.
-- Извлечение работает с данными, уже доступными странице текущего видео. Расширение не требует YouTube API key, OAuth или доступа к аккаунту владельца канала.
-- Навигация YouTube рассматривается как SPA-навигация. Смена video ID инвалидирует старое состояние, отменяет незавершённое извлечение и запускает новое определение доступности.
-- Модуль `Transcript Composer` принимает метаданные и сегменты и возвращает канонический запрос плюс контрольные данные его полноты. Он удаляет только технический шум: невидимые символы, некорректные переводы строк и избыточные пробелы. Смысловой текст не сокращается, не переводится и не пересказывается. Последовательные короткие сегменты объединяются в читаемые блоки без потери текста.
-- Канонический запрос содержит фиксированную короткую инструкцию создать структурированную суммаризацию на выбранном языке, название видео, URL, язык субтитров и полную расшифровку. Пользовательский редактор промпта не входит в MVP.
-- Каждый блок расшифровки содержит компактный таймкод начала в формате `H:MM:SS` или `M:SS`. Границы блоков определяются структурой исходных сегментов и удобочитаемостью, а не жёстким 30-секундным интервалом.
-- Модуль `Large Payload Handoff` является глубоким транспортным модулем. Он принимает одну строку произвольной практической длины и предоставляет одноразовый идентификатор, поток/последовательность чанков, сведения о размере и контрольную сумму. Потребитель подтверждает успешную сборку, после чего данные удаляются.
-- Основным транспортом служит временное внутреннее хранилище расширения, а не системный clipboard и не один большой runtime message. Чанки имеют ограниченный размер и читаются последовательно, чтобы избежать пиковых копий строки и не зависеть от неявных лимитов сообщений.
-- Незавершённые payload автоматически удаляются через 30 минут. После успешной отправки удаление выполняется немедленно. Повторная выдача уже подтверждённого payload запрещена, что снижает риск двойной отправки.
-- Расширение не устанавливает продуктовый лимит на длину расшифровки и не обрезает её. До открытия ИИ оно показывает объём текста и приблизительную оценку токенов. Оценка является предупреждением, а не основанием для скрытого сокращения.
-- Модуль `AI Destination` задаёт общий контракт: открыть чистую целевую страницу, дождаться готовности редактора, вставить полный запрос, сверить вставленный объём, отправить и подтвердить результат либо вернуть типизированную ошибку.
-- ChatGPT и Perplexity реализуются независимыми адаптерами. Селекторы, особенности contenteditable и способы активации кнопки не используются вне соответствующего адаптера.
-- Новая вкладка получает только непрозрачный одноразовый идентификатор операции. Текст расшифровки не передаётся через URL, query-параметры или fragment.
-- Автоотправка разрешена только после проверки, что редактор содержит полный запрос. Проверка использует длину и контрольную сумму нормализованного текста, а не только факт появления какого-либо текста.
-- Если пользователь не авторизован, операция остаётся ожидающей в пределах TTL и может продолжиться после завершения входа. Расширение не вводит логин, пароль и не обходит CAPTCHA.
-- Если редактор найден и текст вставлен, но отправка невозможна, вкладка остаётся открытой с заполненным полем и заметным статусом для ручной отправки. Если вставка невозможна, popup предлагает явное ручное копирование как аварийный путь.
-- Внешний лимит контекста нельзя надёжно определить заранее: он меняется по сервису, тарифу и модели. MVP пытается передать один полный запрос. Он не дробит расшифровку на несколько сообщений ИИ, потому что это меняет семантику, создаёт риск преждевременных ответов и не гарантирует прохождение общего контекстного лимита.
-- При явном отказе сервиса из-за длины расширение сообщает об этом без объявления операции успешной и сохраняет полный payload до TTL. Автоматическое многошаговое суммирование и сжатие станут отдельной продуктовой задачей при наличии подтверждённой потребности.
-- Пользовательские статусы строятся вокруг одной операции с состояниями: получение субтитров, подготовка, открытие сервиса, ожидание редактора/авторизации, вставка, проверка, отправка, успех, восстанавливаемая ошибка, окончательная ошибка и отмена.
-- Конкурентный повторный запуск для того же видео и назначения требует явного подтверждения либо заменяет только ещё не отправленную операцию. Уже отправленная операция не повторяется автоматически.
-- Логи содержат video ID, тип дорожки, размеры, длительности этапов и коды ошибок, но не содержат текст субтитров, полный URL с приватными параметрами, содержимое запроса или данные аккаунта ИИ.
-- Popup является единственной продуктовой поверхностью расширения. Он содержит состояние доступности, сохраняемый выбор языка суммаризации, условный выбор дорожки, отдельные кнопки ChatGPT и Perplexity, прогресс и восстановительные действия. Отдельная страница настроек в MVP не нужна.
-- Сохраняемая настройка пользователя ограничена языком суммаризации. Явно выбранная дорожка действует для текущего видео; активная дорожка YouTube-плеера всегда имеет первый приоритет. Никакие субтитры не сохраняются как пользовательская история.
+- The first release targets Chromium browsers and Manifest V3. Firefox support waits until destination integrations stabilize.
+- The extension keeps only the popup, background service worker, and targeted content scripts. New-tab overrides, DevTools, side panels, demo options pages, boilerplate components, and all-sites content scripts are removed.
+- Permissions are limited to storage and the required YouTube and supported AI-service domains. Broad URL access is not used. Increased local storage is acceptable only for temporary transfer of long transcripts.
+- `YouTube Transcript Source` is a deep adapter. Its public contract accepts the current video context and returns video metadata, caption tracks, and ordered segments with start time, duration, and text. YouTube DOM and internal-data details do not escape the module.
+- Caption retrieval and parsing are adapted from Obsidian Web Clipper 1.7.1 at commit `c2fbae9645332ecf8d05dcf281483693b5054213` and Defuddle 0.19.2. The Reader is not ported. Substantially adapted code retains required MIT notices; Obsidian branding, icons, and marketing assets are not copied.
+- Default track order is: the active player track when detectable; otherwise a track matching the page or video language; otherwise a manual track; otherwise the first auto-generated track. When several tracks exist, the popup provides a compact language-and-type selector.
+- Extraction uses data already available to the current video page. It requires no YouTube API key, OAuth, or channel-owner account access.
+- YouTube navigation is treated as SPA navigation. A changed video ID invalidates old state, cancels unfinished extraction, and starts a new availability check.
+- `Transcript Composer` accepts metadata and segments and returns a canonical prompt plus completeness data. It removes only technical noise such as invisible characters, malformed line breaks, and redundant whitespace. It never shortens, summarizes, translates, or paraphrases meaningful source text. The fixed prompt copy is always English; the selected summary language appears only as an explicit output-language instruction.
+- Every transcript block has a compact `H:MM:SS` or `M:SS` starting timestamp. Boundaries follow source structure and readability rather than a rigid 30-second interval.
+- `Large Payload Handoff` is a deep transport module. It accepts one string of any practical length and provides a one-time identifier, a chunk sequence, size information, and a checksum. The consumer confirms successful assembly, after which the data is deleted.
+- Temporary extension storage is the primary transport, not the system clipboard or one large runtime message. Bounded chunks are read sequentially to avoid peak string copies and implicit message limits.
+- Unfinished payloads expire after 30 minutes. Successful submission deletes them immediately. A confirmed payload cannot be issued again, reducing duplicate-submission risk.
+- The extension imposes no product-level transcript length limit and does not truncate. Before opening the AI service, it displays text size and an approximate token count. This is a warning, not a reason to shorten content.
+- `AI Destination` defines a shared contract: open a clean destination page, wait for the editor, insert the complete prompt, verify the inserted content, submit it, and confirm the result or return a typed error.
+- Each supported AI service uses an independent adapter. Service-specific selectors, contenteditable behavior, and button activation do not leak outside the relevant adapter.
+- A destination tab receives only an opaque, one-time operation ID. Transcript text never travels through URLs, query parameters, or fragments.
+- Automatic submission is allowed only after the editor is verified to contain the complete prompt. Verification uses normalized-text length and checksum, not merely the presence of text.
+- If the user is signed out, the operation remains pending within its TTL and can continue after sign-in. The extension never enters credentials or bypasses CAPTCHA.
+- If the editor contains the complete text but submission is unavailable, the tab remains open with the populated field and a visible status for manual submission. If insertion fails, the popup offers explicit manual copying.
+- External context limits cannot be known reliably in advance because they vary by service, plan, and model. The MVP attempts one complete prompt and does not split the transcript into several AI messages, which would change semantics and could trigger premature answers without solving the total-context limit.
+- When a service explicitly rejects the prompt length, the extension reports the rejection without marking the operation successful and preserves the full payload until TTL expiry. Multi-step summarization or compression is a separate future product decision.
+- One operation moves through caption retrieval, preparation, destination opening, editor or authentication waiting, insertion, verification, submission, success, recoverable error, terminal error, and cancellation states.
+- A concurrent retry for the same video and destination requires confirmation or replaces only an unsent operation. A sent operation is never repeated automatically.
+- Logs may include video ID, track type, sizes, stage durations, and error codes, but never caption text, private URL parameters, prompt contents, or AI account data.
+- The popup is the extension's only product surface. It contains availability, the persistent summary-language choice, optional track selection, separate service buttons, progress, and recovery actions. The MVP needs no settings page.
+- Only the summary language is persisted. An explicitly selected track applies to the current video, while the active YouTube player track has first priority. Captions are never stored as user history.
 
 ## Testing Decisions
 
-- Хороший тест проверяет наблюдаемое поведение публичного контракта: какие дорожки и сегменты получены из входных данных, какой запрос сформирован, полностью ли payload восстановлен, какое состояние операции и действие пользователя получены при успехе или ошибке. Тесты не закрепляют внутренние имена функций, порядок приватных вызовов и конкретную структуру компонентов.
-- В текущем каркасе нет тестового раннера и примеров продуктовых тестов. Для новой логики вводится Vitest; DOM-контракты проверяются в лёгком браузерном окружении с сохранёнными минимальными fixtures. Это становится первым prior art проекта.
-- `YouTube Transcript Source` покрывается fixture-based contract tests: одна авторская дорожка, одна ASR-дорожка, несколько языков, активная дорожка, отсутствие субтитров, пустые события, HTML-сущности, переносы строк, CJK-текст, повторяющиеся сегменты, нарушенный ответ и смена video ID.
-- Fixtures должны быть минимальными и очищенными от пользовательских данных. Как минимум один набор фиксируется по поведению upstream Obsidian Web Clipper на выбранном commit, чтобы порт сохранял ключевые свойства исходной реализации.
-- Правила выбора дорожки тестируются отдельно как чистое внешнее поведение для разных сочетаний языка, типа и активности.
-- `Transcript Composer` тестируется на сохранение порядка и полного текста, нормализацию технического шума, Unicode и emoji, группировку читаемых блоков, таймкод начала каждого блока, корректное добавление метаданных и детерминированную оценку размера.
-- Для `Transcript Composer` обязателен большой синтетический fixture размером не менее нескольких мегабайт. Тест доказывает отсутствие обрезания и совпадение контрольной суммы, а не сравнивает многомегабайтный snapshot.
-- `Large Payload Handoff` тестируется на разбиение и сборку на границах чанков, Unicode-символы на границе, восстановление после перезапуска service worker, однократное подтверждение, повторное чтение до подтверждения, немедленное удаление, TTL-очистку, отмену и параллельные операции.
-- Для транспорта обязателен тест повреждённого или отсутствующего чанка: итог не может быть помечен готовым и не должен передаваться адаптеру назначения.
-- Общий контракт `AI Destination` тестируется единым набором сценариев для обоих адаптеров: редактор готов сразу, появляется с задержкой, требуется авторизация, полная вставка, частичная вставка, кнопка отправки заблокирована, успешная ручная fallback-вставка и изменение ожидаемой DOM-структуры.
-- DOM-fixtures ChatGPT и Perplexity хранят только минимальную форму редактора и кнопки. Тесты не пытаются снимками зафиксировать всю страницу стороннего сервиса.
-- Координатор операции тестируется через поддельные browser APIs: успешный путь, отмена на каждом асинхронном этапе, SPA-навигация, закрытие целевой вкладки, повторный запуск, таймаут авторизации и отсутствие двойной отправки.
-- Popup тестируется через пользовательские действия и доступные названия элементов: выбор языка суммаризации, отдельные кнопки сервисов, условный выбор дорожки, disabled-состояние без субтитров, прогресс, предупреждение о размере, retry, copy fallback и клавиатурная навигация.
-- Секретность логов проверяется тестом, который пропускает уникальный маркер через ошибочный сценарий и убеждается, что маркер не оказался в диагностических событиях.
-- Перед выпуском проводится ручной smoke test на актуальных публичных страницах YouTube, ChatGPT и Perplexity, потому что внешние DOM-контракты могут измениться независимо от репозитория. Набор включает короткое видео, длинное видео, авторские субтитры, ASR, несколько языков, отсутствие субтитров, разлогиненный сервис и запрос, который сервис отклоняет по длине.
-- Проверка считается успешной только после подтверждения полной вставки и фактического запуска запроса. Само открытие вкладки не является успешным результатом.
+- Tests focus on observable public behavior: retrieved tracks and segments, composed prompts, complete payload reconstruction, operation states, and user actions. They do not lock down private function names, internal call order, or component structure.
+- Vitest provides the test runner, and DOM contracts use a lightweight browser environment with minimal saved fixtures.
+- `YouTube Transcript Source` fixture-based contract tests cover manual and auto-generated tracks, multiple languages, the active track, no captions, empty events, HTML entities, line breaks, CJK text, duplicate segments, malformed responses, and changed video IDs.
+- Fixtures stay minimal and contain no user data. At least one fixture reflects the selected upstream Obsidian Web Clipper commit so the port preserves key behavior.
+- Track-selection rules are tested separately as pure observable behavior across combinations of language, type, and active status.
+- `Transcript Composer` tests cover order and full-text preservation, technical-noise cleanup, Unicode and emoji, readable block grouping, starting timestamps, metadata, English instruction copy, explicit selected output language, and deterministic size estimates.
+- A synthetic multi-megabyte composer fixture proves there is no truncation by comparing checksums rather than storing a huge snapshot.
+- `Large Payload Handoff` tests chunk boundaries, boundary Unicode, service-worker restart recovery, one-time confirmation, repeat reads before confirmation, immediate deletion, TTL cleanup, cancellation, and concurrent operations.
+- A corrupted-or-missing-chunk transport test ensures incomplete data is never marked ready or passed to a destination adapter.
+- The shared `AI Destination` contract runs against both adapters with scenarios for an immediately available editor, delayed editor, required sign-in, complete insertion, partial insertion, disabled send button, successful manual fallback, and unexpected DOM changes.
+- AI-service DOM fixtures contain only the minimal editor and button structure rather than snapshots of whole third-party pages.
+- Operation coordinator tests use fake browser APIs for the successful path, cancellation at every asynchronous stage, SPA navigation, destination-tab closure, retries, authentication timeout, and prevention of duplicate submission.
+- Popup tests use user actions and accessible names for summary-language selection, service buttons, conditional track selection, the no-captions disabled state, progress, size warnings, retry, copy fallback, and keyboard navigation.
+- Log secrecy is tested by passing a unique marker through a failure path and verifying that it never appears in diagnostic events.
+- Before release, manual smoke tests run against current public YouTube and every supported AI-service page because external DOM contracts can change independently. The set includes short and long videos, manual and auto-generated captions, multiple languages, no captions, signed-out services, and a prompt rejected for length.
+- Success requires verified complete insertion and actual prompt submission. Opening a tab alone is not success.
 
 ## Out of Scope
 
-- Интерактивный Reader для субтитров, закреплённый видеоплеер, подсветка текущего сегмента, автопрокрутка, поиск по расшифровке и переход по таймкоду, присутствующие в Obsidian Web Clipper.
-- Скачивание видео или аудио и самостоятельная speech-to-text транскрипция для роликов без субтитров.
-- YouTube Data API, OAuth YouTube и получение закрытых субтитров принадлежащих пользователю видео.
-- Прямые API-интеграции ChatGPT или Perplexity, хранение API-ключей и оплата запросов от имени пользователя.
-- Собственная модель суммаризации, собственный backend и показ ответа ИИ внутри расширения.
-- Провайдеры кроме ChatGPT и Perplexity.
-- Настройка текста промпта, стиля суммаризации или формата результата помимо выбора языка ответа.
-- Автоматическая отправка расшифровки несколькими сообщениями, map-reduce суммаризация или локальное предварительное сжатие для обхода контекстного лимита.
-- Обход лимитов, CAPTCHA, антибот-защиты, платных ограничений или требований авторизации сторонних сервисов.
-- Поддержка плейлистов, пакетная обработка нескольких видео и фоновая очередь.
-- История суммаризаций, закладки, экспорт в Markdown/Obsidian, облачная синхронизация и аналитика содержимого.
-- Поддержка произвольных сайтов, подкастов, локальных файлов и live-трансляций без завершённой доступной дорожки.
-- Firefox, Safari и мобильные браузеры в первой версии.
+- Obsidian Web Clipper features such as an interactive caption reader, pinned player, current-segment highlighting, autoscroll, transcript search, and timestamp navigation.
+- Downloading video or audio, or performing speech-to-text for videos without captions.
+- YouTube Data API, YouTube OAuth, or private caption retrieval for user-owned videos.
+- Direct AI-service API integrations, API-key storage, or paying for prompts on the user's behalf.
+- A proprietary summary model, backend, or AI response displayed inside the extension.
+- Providers other than ChatGPT, Perplexity, Claude, Gemini, Qwen, and DeepSeek.
+- Custom prompt text, summary style, or result format beyond choosing the response language.
+- Sending a transcript as several AI messages, map-reduce summarization, or local pre-compression to bypass context limits.
+- Bypassing rate limits, CAPTCHA, anti-bot systems, paid restrictions, or third-party authentication requirements.
+- Playlists, batch processing, or a background queue.
+- Summary history, bookmarks, Markdown or Obsidian export, cloud sync, or content analytics.
+- Arbitrary websites, podcasts, local files, or live streams without a complete available track.
+- Firefox, Safari, and mobile browsers in the first release.
 
 ## Further Notes
 
-- Рабочее название домена продукта: `Summarize It`. Внутри PRD термин `расшифровка` означает выбранную дорожку YouTube-субтитров после технической нормализации и группировки в таймкодированные блоки; `суммаризация` означает запрос, выполняемый внешним ИИ-сервисом.
-- Формулировка пользователя «копируем текст» трактуется как перенос полного текста. Для надёжности и сохранности существующего clipboard штатная реализация использует внутренний handoff; явное копирование остаётся fallback-действием.
-- Obsidian Web Clipper 1.7.1 содержит интерактивную YouTube-расшифровку с прокруткой и синхронизацией. Для этого продукта связанная логика Defuddle 0.19.2 служит проверенным источником получения и группировки сегментов, но не образцом полного интерфейса.
-- Репозиторий Obsidian Web Clipper распространяет исходный код по MIT License. При переносе существенного кода необходимо сохранить copyright и текст лицензии; товарные знаки и визуальные материалы не переносятся.
-- Критерий готовности MVP: на поддерживаемом публичном YouTube-видео с субтитрами пользователь одним действием запускает операцию, и в новой вкладке выбранного сервиса автоматически отправляется запрос, содержащий полную расшифровку с таймкодированными блоками; при любой неполноте отправка блокируется, а текст остаётся восстановимым.
-- Оценка полноты относится к данным, доступным YouTube-странице. Расширение не может восстановить отсутствующие, скрытые или недоступные фрагменты субтитров.
-- На момент составления PRD репозиторий является почти неизменённым шаблоном браузерного расширения. Этот документ, корневой словарь и первый ADR вводят продуктовую терминологию и исходные границы модулей; prior art продуктовых тестов пока нет.
-- Публикация в issue tracker требует сначала заменить upstream remote шаблона на репозиторий продукта и авторизовать доступ. До этого создавать issue в `JohnBra/vite-web-extension` нельзя, поскольку это чужой исходный проект.
+- The working product name is `Summarize It`. In this PRD, a transcript is the selected YouTube caption track after technical normalization and grouping into timestamped blocks; summarization is the request performed by the external AI service.
+- A request to “copy the text” means transferring the complete text. The normal implementation uses internal handoff for reliability and clipboard preservation; explicit copying remains a fallback.
+- Obsidian Web Clipper 1.7.1 includes an interactive synchronized YouTube transcript. Its related Defuddle 0.19.2 logic is a proven source for segment retrieval and grouping, not a model for the entire interface.
+- Obsidian Web Clipper source code is MIT-licensed. Substantial adaptations must preserve copyright and license text; trademarks and visual assets are not transferred.
+- MVP completion means that, on a supported public captioned YouTube video, one user action starts an operation and automatically submits a prompt containing the complete timestamped transcript in a new tab of the selected service. Any incomplete transfer blocks submission while keeping the text recoverable.
+- Completeness applies to data available to the YouTube page. The extension cannot recover missing, hidden, or inaccessible caption fragments.
+- At the time this PRD was written, the repository was a nearly unchanged browser-extension template. This document, the root glossary, and the first ADR establish product terminology and initial module boundaries.
+- Publishing to an issue tracker first requires replacing the template's upstream remote with the product repository and authorizing access. Issues must not be created in `JohnBra/vite-web-extension`, which is a third-party source project.

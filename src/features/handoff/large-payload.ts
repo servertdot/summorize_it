@@ -1,6 +1,6 @@
 import { OPERATION_TTL_MS } from '@src/shared/operation-policy';
 
-export type AiDestination = 'chatgpt' | 'perplexity';
+export type AiDestination = 'chatgpt' | 'perplexity' | 'claude' | 'gemini' | 'qwen' | 'deepseek';
 
 export interface KeyValueStorage {
   get(keys: string[]): Promise<Record<string, unknown>>;
@@ -79,7 +79,7 @@ export class LargePayloadStore {
     const operation = await this.getOperation(id);
     if (operation.expiresAt <= this.options.now()) {
       await this.complete(id);
-      throw new Error('Операция истекла');
+      throw new Error('Operation expired');
     }
 
     const keys = Array.from({ length: operation.chunkCount }, (_, index) => chunkKey(id, index));
@@ -89,13 +89,13 @@ export class LargePayloadStore {
       const storedChunks = await this.storage.get(batchKeys);
       for (const key of batchKeys) {
         const chunk = storedChunks[key];
-        if (typeof chunk !== 'string') throw new Error('Данные операции повреждены');
+        if (typeof chunk !== 'string') throw new Error('Operation data is corrupted');
         chunks.push(chunk);
       }
     }
     const prompt = chunks.join('');
     if (prompt.length !== operation.charLength || payloadChecksum(prompt) !== operation.checksum) {
-      throw new Error('Данные операции повреждены');
+      throw new Error('Operation data is corrupted');
     }
     return prompt;
   }
@@ -116,13 +116,13 @@ export class LargePayloadStore {
   private async getOperation(id: string): Promise<StoredOperation> {
     const stored = await this.storage.get([metaKey(id)]);
     const operation = stored[metaKey(id)];
-    if (!isStoredOperation(operation)) throw new Error('Операция не найдена');
+    if (!isStoredOperation(operation)) throw new Error('Operation not found');
     return operation;
   }
 }
 
 function chunkString(value: string, chunkSize: number): string[] {
-  if (chunkSize < 1) throw new Error('Размер чанка должен быть положительным');
+  if (chunkSize < 1) throw new Error('Chunk size must be positive');
   if (value.length === 0) return [''];
   const chunks: string[] = [];
   for (let offset = 0; offset < value.length; offset += chunkSize) {

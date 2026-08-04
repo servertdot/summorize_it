@@ -14,11 +14,31 @@ describe('AI destination contract', () => {
       html: '<textarea placeholder="Ask anything"></textarea><button aria-label="Submit">Submit</button>',
       button: '[aria-label="Submit"]',
     },
+    {
+      destination: 'claude' as const,
+      html: '<div data-testid="chat-input" contenteditable="true"></div><button data-testid="send-button">Send</button>',
+      button: '[data-testid="send-button"]',
+    },
+    {
+      destination: 'gemini' as const,
+      html: '<rich-textarea><div class="ql-editor" contenteditable="true"></div></rich-textarea><button aria-label="Send message">Send</button>',
+      button: '[aria-label="Send message"]',
+    },
+    {
+      destination: 'qwen' as const,
+      html: '<textarea placeholder="Ask Qwen"></textarea><button type="submit">Send</button>',
+      button: '[type="submit"]',
+    },
+    {
+      destination: 'deepseek' as const,
+      html: '<textarea placeholder="Message DeepSeek"></textarea><button type="submit">Send</button>',
+      button: '[type="submit"]',
+    },
   ])('inserts the complete prompt and sends it on $destination', ({ destination, html, button }) => {
     document.body.innerHTML = html;
     const onSend = vi.fn();
     document.querySelector(button)?.addEventListener('click', onSend);
-    const prompt = 'Полный запрос\n\n[0:30] Unicode 🚀 text';
+    const prompt = 'Complete prompt\n\n[0:30] Unicode 🚀 text';
 
     const result = deliverPrompt(document, prompt, destination);
 
@@ -78,6 +98,6 @@ describe('AI destination contract', () => {
 
   it('detects an explicit context-length rejection without including prompt text', () => {
     document.body.innerHTML = '<div role="alert">This message is too long for the context window</div>';
-    expect(detectDestinationRejection(document)).toBe('Сервис отклонил запрос из-за его длины');
+    expect(detectDestinationRejection(document)).toBe('The service rejected the prompt because it is too long');
   });
 });

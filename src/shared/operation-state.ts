@@ -1,4 +1,5 @@
 import type { AiDestination } from '@src/features/handoff/large-payload';
+import { isAiDestination } from '@src/shared/destinations';
 
 export const OPERATION_STATUSES = [
   'prepared', 'opening', 'waiting-editor', 'inserting', 'verifying', 'sending',
@@ -35,7 +36,7 @@ export function isSummaryOperationState(value: unknown): value is SummaryOperati
   if (!value || typeof value !== 'object') return false;
   const operation = value as Partial<SummaryOperationState>;
   return typeof operation.id === 'string'
-    && (operation.destination === 'chatgpt' || operation.destination === 'perplexity')
+    && isAiDestination(operation.destination)
     && typeof operation.videoId === 'string'
     && typeof operation.videoTitle === 'string'
     && typeof operation.charLength === 'number'

@@ -20,8 +20,7 @@ select { width: 100%; border: 1px solid #363941; border-radius: 9px; padding: 9p
 select:focus { border-color: #8e99ff; box-shadow: 0 0 0 3px #727fff22; }
 .track-note { color: #858892; font-size: 11px; }
 .destination-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 2px; }
-.destination-grid button { border: 0; border-radius: 10px; padding: 11px 8px; color: white; font-weight: 700; cursor: pointer; background: #5966e8; }
-.destination-grid button:last-child { background: #2f8b76; }
+.destination-grid button { border: 1px solid #727fff55; border-radius: 10px; padding: 11px 8px; color: white; font-weight: 700; cursor: pointer; background: linear-gradient(145deg, #626fe9, #4d59cd); }
 .destination-grid button:hover:not(:disabled) { filter: brightness(1.12); }
 .destination-grid button:disabled { cursor: wait; opacity: .55; }
 .notice { margin-bottom: 14px; border-radius: 9px; padding: 10px 12px; font-size: 12px; line-height: 1.45; }

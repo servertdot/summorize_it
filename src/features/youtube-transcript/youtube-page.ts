@@ -62,7 +62,7 @@ export function readYouTubePage(
 function accessErrorFrom(status?: PlayerResponse['playabilityStatus']): string | undefined {
   if (!status?.status || status.status === 'OK') return undefined;
   const reason = status.reason?.trim();
-  return reason ? `Видео недоступно: ${reason}` : 'Видео недоступно для получения субтитров';
+  return reason ? `Video unavailable: ${reason}` : 'Video unavailable for caption retrieval';
 }
 
 function toCaptionTrack(track: PlayerCaptionTrack, index: number): CaptionTrack[] {

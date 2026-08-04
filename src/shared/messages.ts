@@ -1,5 +1,6 @@
 import type { AiDestination } from '@src/features/handoff/large-payload';
 import type { StartedSummaryOperation } from '@src/features/summary-operation/start-summary-operation';
+import { isAiDestination } from '@src/shared/destinations';
 import {
   OPERATION_STATUSES,
   isSummaryOperationState,
@@ -72,10 +73,6 @@ export function isBackgroundRequest(value: unknown): value is BackgroundRequest 
         && typeof value.operation.operationId === 'string';
     default: return false;
   }
-}
-
-function isAiDestination(value: unknown): value is AiDestination {
-  return value === 'chatgpt' || value === 'perplexity';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

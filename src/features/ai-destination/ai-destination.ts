@@ -19,16 +19,40 @@ const SELECTORS: Record<AiDestination, { editors: string[]; sendButtons: string[
     editors: ['#ask-input', 'textarea[placeholder]', 'div[contenteditable="true"]'],
     sendButtons: ['[data-testid="submit-button"]', 'button[aria-label="Submit"]', 'button[aria-label*="Send"]'],
   },
+  claude: {
+    editors: ['[data-testid="chat-input"]', '.ProseMirror[contenteditable="true"]', 'div[contenteditable="true"][role="textbox"]'],
+    sendButtons: ['[data-testid="send-button"]', 'button[aria-label*="Send"]', 'button[aria-label*="send"]'],
+  },
+  gemini: {
+    editors: ['rich-textarea .ql-editor[contenteditable="true"]', '.ql-editor[contenteditable="true"]', 'div[contenteditable="true"][role="textbox"]'],
+    sendButtons: ['button[aria-label*="Send message"]', 'button.send-button', 'button[aria-label*="Send"]'],
+  },
+  qwen: {
+    editors: ['textarea[placeholder]', 'div[contenteditable="true"][role="textbox"]', 'div[contenteditable="true"]'],
+    sendButtons: ['[data-testid="send-button"]', 'button[type="submit"]', 'button[aria-label*="Send"]', '[role="button"][aria-label*="Send"]'],
+  },
+  deepseek: {
+    editors: ['textarea[placeholder]', 'div[contenteditable="true"][role="textbox"]', 'div[contenteditable="true"]'],
+    sendButtons: ['button[type="submit"]', 'button[aria-label*="Send"]', '[role="button"][aria-label*="Send"]'],
+  },
 };
 
 const GENERATION_SELECTORS: Record<AiDestination, string[]> = {
   chatgpt: ['[data-testid="stop-button"]', 'button[aria-label*="Stop"]'],
   perplexity: ['button[aria-label*="Stop"]', '[data-testid="stop-generating"]'],
+  claude: ['button[aria-label*="Stop"]', 'button[aria-label*="stop"]', '[data-testid="stop-button"]'],
+  gemini: ['button[aria-label*="Stop"]', 'button[aria-label*="stop"]', '.stop-button'],
+  qwen: ['button[aria-label*="Stop"]', 'button[aria-label*="stop"]', '[data-testid*="stop"]'],
+  deepseek: ['button[aria-label*="Stop"]', 'button[aria-label*="stop"]', '[data-testid*="stop"]'],
 };
 
 const RESPONSE_SELECTORS: Record<AiDestination, string> = {
   chatgpt: '[data-message-author-role="assistant"]',
   perplexity: '[data-testid="answer"], main article',
+  claude: '[data-is-streaming], [data-testid="assistant-message"], .font-claude-response',
+  gemini: 'model-response, message-content, [data-test-id="model-response"]',
+  qwen: '[data-role="assistant"], [data-testid="assistant-message"], .message-assistant, [class*="assistant-message"]',
+  deepseek: '[data-role="assistant"], [data-testid="assistant-message"], .ds-markdown, [class*="assistant-message"]',
 };
 
 export interface DeliveryMarker { responseCount: number }
@@ -71,8 +95,8 @@ export function detectDestinationRejection(document: Document): string | undefin
   const messages = Array.from(document.querySelectorAll('[role="alert"], [data-testid*="error"], [class*="toast"]'))
     .map((element) => element.textContent?.toLocaleLowerCase() ?? '')
     .join(' ');
-  if (/too long|context (window|length)|token limit|maximum.*token|слишком длин|контекст/.test(messages)) {
-    return 'Сервис отклонил запрос из-за его длины';
+  if (/too long|context (window|length)|token limit|maximum.*token/.test(messages)) {
+    return 'The service rejected the prompt because it is too long';
   }
   return undefined;
 }

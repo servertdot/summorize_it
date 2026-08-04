@@ -4,6 +4,7 @@ import { LargePayloadStore } from '@src/features/handoff/large-payload';
 import { isYouTubePage } from '@src/features/youtube-transcript/transcript-operation';
 import { sendBackgroundMessage } from '@src/platform/background-messaging';
 import { browserLocalStorage } from '@src/platform/browser-storage';
+import { AI_DESTINATIONS, DEFAULT_DESTINATIONS, isAiDestination } from '@src/shared/destinations';
 import {
   isOperationResponse,
   type OperationResponse,
@@ -15,46 +16,48 @@ import type { PopupClient } from './Popup';
 export const browserPopupClient: PopupClient = {
   async load() {
     const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
-    const settings = await browser.storage.local.get('summaryLanguage');
+    const settings = await browser.storage.local.get(['summaryLanguage', 'selectedDestinations']);
     const browserLanguage = supportedLanguage(browser.i18n.getUILanguage().split('-')[0]);
     const summaryLanguage = typeof settings.summaryLanguage === 'string' ? settings.summaryLanguage : browserLanguage;
+    const selectedDestinations = readSelectedDestinations(settings.selectedDestinations);
     if (activeTab?.id && isAiUrl(activeTab.url)) {
       const tabOperation = await sendBackgroundMessage({ type: 'GET_TAB_OPERATION', tabId: activeTab.id });
-      if (tabOperation.operation) return { summaryLanguage, operation: tabOperation.operation };
+      if (tabOperation.operation) return { summaryLanguage, selectedDestinations, operation: tabOperation.operation };
     }
 
     if (activeTab?.id && activeTab.url?.startsWith('https://www.youtube.com/watch')) {
       const page = await getYouTubePage(activeTab.id);
-      return { page, summaryLanguage };
+      return { page, summaryLanguage, selectedDestinations };
     }
 
     const activeOperation = await sendBackgroundMessage({ type: 'GET_ACTIVE_OPERATION' });
-    if (activeOperation.operation) return { summaryLanguage, operation: activeOperation.operation };
-    throw new Error('Откройте обычное YouTube-видео');
+    if (activeOperation.operation) return { summaryLanguage, selectedDestinations, operation: activeOperation.operation };
+    throw new Error('Open a standard YouTube video');
   },
   async saveSummaryLanguage(summaryLanguage) { await browser.storage.local.set({ summaryLanguage }); },
+  async saveDestinations(selectedDestinations) { await browser.storage.local.set({ selectedDestinations }); },
   async prepare(destination, summaryLanguage, selectedTrackId) {
     const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
-    if (!activeTab?.id) throw new Error('Вкладка YouTube недоступна');
+    if (!activeTab?.id) throw new Error('The YouTube tab is unavailable');
     const request = {
       type: 'START_SUMMARY', destination, summaryLanguage, selectedTrackId,
     } satisfies YouTubeContentRequest;
     const response: unknown = await browser.tabs.sendMessage(activeTab.id, request);
-    if (!isOperationResponse(response)) throw new Error('Некорректный ответ YouTube-адаптера');
-    return requireOperation(response, 'Не удалось подготовить суммаризацию');
+    if (!isOperationResponse(response)) throw new Error('Invalid response from the YouTube adapter');
+    return requireOperation(response, 'Could not prepare the summary');
   },
   async open(operationId, destination) {
-    return requireOperation(await sendBackgroundMessage({ type: 'OPEN_DESTINATION', operationId, destination }), 'Не удалось открыть ИИ-сервис');
+    return requireOperation(await sendBackgroundMessage({ type: 'OPEN_DESTINATION', operationId, destination }), 'Could not open the AI service');
   },
   async refresh(operationId) {
     return (await sendBackgroundMessage({ type: 'GET_OPERATION', operationId })).operation;
   },
   async retry(operationId) {
-    return requireOperation(await sendBackgroundMessage({ type: 'RETRY_OPERATION', operationId }), 'Не удалось повторить операцию');
+    return requireOperation(await sendBackgroundMessage({ type: 'RETRY_OPERATION', operationId }), 'Could not retry the operation');
   },
   async cancel(operationId) {
     const response = await sendBackgroundMessage({ type: 'CANCEL_OPERATION', operationId });
-    if (!response.ok) throw new Error(response.error || 'Не удалось отменить операцию');
+    if (!response.ok) throw new Error(response.error || 'Could not cancel the operation');
   },
   async copy(operationId) {
     const prompt = await new LargePayloadStore(browserLocalStorage).read(operationId);
@@ -65,7 +68,7 @@ export const browserPopupClient: PopupClient = {
 async function getYouTubePage(tabId: number) {
   const request = { type: 'GET_YOUTUBE_PAGE' } satisfies YouTubeContentRequest;
   const response: unknown = await browser.tabs.sendMessage(tabId, request);
-  if (!isYouTubePage(response)) throw new Error('Некорректный ответ YouTube-адаптера');
+  if (!isYouTubePage(response)) throw new Error('Invalid response from the YouTube adapter');
   return response;
 }
 function requireOperation(response: OperationResponse, fallback: string) {
@@ -86,8 +89,15 @@ async function copyText(value: string): Promise<void> {
 function supportedLanguage(language: string): string {
   return ['ru', 'en', 'uk', 'de', 'es', 'fr', 'it', 'pt', 'ja', 'ko', 'zh'].includes(language) ? language : 'en';
 }
+function readSelectedDestinations(value: unknown) {
+  if (!Array.isArray(value)) return [...DEFAULT_DESTINATIONS];
+  const selected = new Set(value.filter(isAiDestination));
+  const destinations = AI_DESTINATIONS.filter((destination) => selected.has(destination));
+  return destinations.length > 0 ? destinations : [...DEFAULT_DESTINATIONS];
+}
 function isAiUrl(url?: string): boolean {
   return Boolean(url && [
     'https://chatgpt.com/', 'https://chat.openai.com/', 'https://www.perplexity.ai/', 'https://perplexity.ai/',
+    'https://claude.ai/', 'https://gemini.google.com/', 'https://chat.qwen.ai/', 'https://chat.deepseek.com/',
   ].some((origin) => url.startsWith(origin)));
 }

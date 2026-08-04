@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { AiDestination } from '@src/features/handoff/large-payload';
+
 import { startSummaryOperation } from './start-summary-operation';
 
 describe('summary operation', () => {
   it('prepares and stores the complete prompt before the popup opens a destination', async () => {
     const events: string[] = [];
-    const save = vi.fn(async (prompt: string, destination: 'chatgpt' | 'perplexity') => {
+    const save = vi.fn(async (prompt: string, destination: AiDestination) => {
       events.push(`saved:${destination}:${prompt.length}`);
       return {
         id: 'one-time-id', destination, chunkCount: 2, charLength: prompt.length,
@@ -45,6 +47,6 @@ describe('summary operation', () => {
       },
       fetchCaption: vi.fn(),
       save: vi.fn(),
-    })).rejects.toThrow('Субтитры не найдены');
+    })).rejects.toThrow('No captions found');
   });
 });

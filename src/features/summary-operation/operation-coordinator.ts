@@ -39,7 +39,7 @@ export function markTargetClosed(operation: SummaryOperationState): SummaryOpera
   return {
     ...operation,
     status: 'recoverable-error',
-    statusMessage: 'Вкладка ИИ была закрыта. Можно повторить или скопировать запрос.',
+    statusMessage: 'The AI tab was closed. You can retry or copy the prompt.',
     targetTabId: undefined,
   };
 }
