@@ -49,7 +49,7 @@ interface PrepareYouTubeSummaryInput {
   page: YouTubePage;
   summaryLanguage: string;
   selectedTrackId?: string;
-  fetchCaption: (url: string) => Promise<string>;
+  fetchCaption: (track: CaptionTrack) => Promise<string>;
 }
 
 const SENTENCE_END = /[.!?。！？]["'’”）』」)]*\s*$/;
@@ -86,7 +86,7 @@ export async function prepareYouTubeSummary({
     throw new TranscriptPreparationError('captions-not-found');
   }
 
-  const xml = await fetchCaption(track.baseUrl);
+  const xml = await fetchCaption(track);
   const segments = parseCaptionXml(xml);
   if (segments.length === 0) {
     throw new TranscriptPreparationError('caption-fetch-failed');

@@ -26,8 +26,8 @@ describe('AI destination contract', () => {
     },
     {
       destination: 'qwen' as const,
-      html: '<textarea placeholder="Ask Qwen"></textarea><button type="submit">Send</button>',
-      button: '[type="submit"]',
+      html: '<textarea class="message-input-textarea" placeholder="Ask Qwen"></textarea><button class="send-button" aria-label="Send">Send</button>',
+      button: 'button.send-button',
     },
     {
       destination: 'deepseek' as const,
@@ -85,6 +85,82 @@ describe('AI destination contract', () => {
     expect(result).toEqual({ status: 'sent' });
     expect(editor.value).toBe('');
     expect(editor.dataset.attached).toBe('true');
+    expect(onSend).toHaveBeenCalledOnce();
+  });
+
+  it('waits for Qwen pasted-file parsing before sending', async () => {
+    document.body.innerHTML = `
+      <div class="message-input-column-file">Pasted_Text.txt 10 KB Parsing...</div>
+      <textarea class="message-input-textarea" placeholder="Ask Qwen"></textarea>
+      <button class="send-button" aria-label="Send">Send</button>
+    `;
+    const editor = document.querySelector('textarea') as HTMLTextAreaElement;
+    const file = document.querySelector('.message-input-column-file') as HTMLElement;
+    const onSend = vi.fn();
+    document.querySelector('button')?.addEventListener('click', onSend);
+    editor.addEventListener('paste', (event) => {
+      event.preventDefault();
+      editor.value = '';
+    });
+    window.setTimeout(() => {
+      file.textContent = 'Pasted_Text.txt 10 KB';
+    }, 250);
+
+    const result = await deliverPrompt(document, 'a very long pasted transcript payload for qwen', 'qwen');
+
+    expect(result).toEqual({ status: 'sent' });
+    expect(onSend).toHaveBeenCalledOnce();
+    expect(file.textContent).toBe('Pasted_Text.txt 10 KB');
+  });
+
+  it('does not send on Qwen when the editor is empty and no pasted file appeared', async () => {
+    vi.useFakeTimers();
+    try {
+      document.body.innerHTML = `
+        <textarea class="message-input-textarea" placeholder="Ask Qwen"></textarea>
+        <button class="send-button" aria-label="Send">Send</button>
+      `;
+      const editor = document.querySelector('textarea') as HTMLTextAreaElement;
+      const onSend = vi.fn();
+      document.querySelector('button')?.addEventListener('click', onSend);
+      editor.addEventListener('paste', (event) => {
+        event.preventDefault();
+        editor.value = '';
+      });
+
+      const resultPromise = deliverPrompt(document, 'prompt that never lands', 'qwen');
+      await vi.advanceTimersByTimeAsync(11_000);
+      const result = await resultPromise;
+
+      expect(result).toEqual({ status: 'incomplete-insertion' });
+      expect(onSend).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('accepts Qwen text that appears asynchronously after paste', async () => {
+    document.body.innerHTML = `
+      <textarea class="message-input-textarea" placeholder="Ask Qwen"></textarea>
+      <button class="send-button" aria-label="Send" disabled>Send</button>
+    `;
+    const editor = document.querySelector('textarea') as HTMLTextAreaElement;
+    const button = document.querySelector('button') as HTMLButtonElement;
+    const onSend = vi.fn();
+    button.addEventListener('click', onSend);
+    const prompt = 'async qwen prompt';
+    editor.addEventListener('paste', (event) => {
+      event.preventDefault();
+      window.setTimeout(() => {
+        editor.value = prompt;
+        button.disabled = false;
+      }, 200);
+    });
+
+    const result = await deliverPrompt(document, prompt, 'qwen');
+
+    expect(result).toEqual({ status: 'sent' });
+    expect(editor.value).toBe(prompt);
     expect(onSend).toHaveBeenCalledOnce();
   });
 

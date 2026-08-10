@@ -58,7 +58,10 @@ describe('YouTube summary preparation', () => {
       fetchCaption,
     });
 
-    expect(fetchCaption).toHaveBeenCalledWith('https://www.youtube.com/api/timedtext?auto');
+    expect(fetchCaption).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'en-auto',
+      baseUrl: 'https://www.youtube.com/api/timedtext?auto',
+    }));
     expect(result.track.id).toBe('en-auto');
     expect(result.blocks).toEqual([
       { start: 0, text: 'Hello & welcome.' },

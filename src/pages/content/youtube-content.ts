@@ -2,6 +2,8 @@ import browser from 'webextension-polyfill';
 
 import { LargePayloadStore } from '@src/features/handoff/large-payload';
 import { startSummaryOperation } from '@src/features/summary-operation/start-summary-operation';
+import { fetchCaptionTrackXml } from '@src/features/youtube-transcript/caption-fetch';
+import type { CaptionTrack } from '@src/features/youtube-transcript/transcript-operation';
 import { readYouTubePage, type YouTubeBridgeSnapshot } from '@src/features/youtube-transcript/youtube-page';
 import { sendBackgroundMessage } from '@src/platform/background-messaging';
 import { browserLocalStorage } from '@src/platform/browser-storage';
@@ -29,7 +31,7 @@ export function registerYouTubeContent(): void {
         summaryLanguage: message.summaryLanguage,
         selectedTrackId: message.selectedTrackId,
         page,
-        fetchCaption: (url) => fetchCaptionXml(url, controller.signal),
+        fetchCaption: (track) => fetchCaptionXml(page.videoId, track, controller.signal),
         save: (prompt, destination) => handoff.save(prompt, destination),
       });
       storedOperationId = result.operationId;
@@ -74,14 +76,8 @@ function requestYouTubeSnapshot(): YouTubeBridgeSnapshot {
   try { return JSON.parse(serialized) as YouTubeBridgeSnapshot; } catch { return {}; }
 }
 
-async function fetchCaptionXml(baseUrl: string, signal: AbortSignal): Promise<string> {
-  const url = new URL(baseUrl);
-  if (url.protocol !== 'https:' || !(url.hostname === 'youtube.com' || url.hostname.endsWith('.youtube.com'))) {
-    throw new Error('Invalid captions URL');
-  }
-  const response = await fetch(url, { credentials: 'include', signal });
-  if (!response.ok) throw new Error('Could not retrieve captions');
-  return response.text();
+function fetchCaptionXml(videoId: string, track: CaptionTrack, signal: AbortSignal): Promise<string> {
+  return fetchCaptionTrackXml({ videoId, track, signal });
 }
 
 function errorMessage(cause: unknown): string {

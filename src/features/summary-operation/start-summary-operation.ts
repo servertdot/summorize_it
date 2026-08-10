@@ -1,6 +1,7 @@
 import type { AiDestination, StoredOperation } from '@src/features/handoff/large-payload';
 import {
   prepareYouTubeSummary,
+  type CaptionTrack,
   type YouTubePage,
 } from '@src/features/youtube-transcript/transcript-operation';
 
@@ -9,7 +10,7 @@ interface StartSummaryOperationInput {
   summaryLanguage: string;
   selectedTrackId?: string;
   page: YouTubePage;
-  fetchCaption: (url: string) => Promise<string>;
+  fetchCaption: (track: CaptionTrack) => Promise<string>;
   save: (prompt: string, destination: AiDestination) => Promise<StoredOperation>;
 }
 

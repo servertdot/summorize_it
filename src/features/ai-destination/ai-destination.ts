@@ -28,8 +28,8 @@ const SELECTORS: Record<AiDestination, { editors: string[]; sendButtons: string[
     sendButtons: ['button[aria-label*="Send message"]', 'button.send-button', 'button[aria-label*="Send"]'],
   },
   qwen: {
-    editors: ['textarea[placeholder]', 'div[contenteditable="true"][role="textbox"]', 'div[contenteditable="true"]'],
-    sendButtons: ['[data-testid="send-button"]', 'button[type="submit"]', 'button[aria-label*="Send"]', '[role="button"][aria-label*="Send"]'],
+    editors: ['textarea.message-input-textarea', 'textarea[placeholder]', 'div[contenteditable="true"][role="textbox"]'],
+    sendButtons: ['button.send-button', 'button[aria-label="Send"]', 'button[aria-label*="Send"]'],
   },
   deepseek: {
     editors: ['textarea[placeholder]', 'div[contenteditable="true"][role="textbox"]', 'div[contenteditable="true"]'],
@@ -55,8 +55,13 @@ const RESPONSE_SELECTORS: Record<AiDestination, string> = {
   deepseek: '[data-role="assistant"], [data-testid="assistant-message"], .ds-markdown, [class*="assistant-message"]',
 };
 
-/** Delay so React/UI can turn a long paste into an attachment before we verify. */
+/** Initial pause so React/UI can begin handling a synthetic paste. */
 const PASTE_SETTLE_MS = 150;
+/** How long to wait for async paste text or a finished long-paste attachment. */
+const PASTE_READY_TIMEOUT_MS = 10_000;
+/** Extra time to wait for Send after the full prompt is already in the editor. */
+const SEND_BUTTON_WAIT_MS = 2_000;
+const PASTE_POLL_MS = 100;
 
 export interface DeliveryMarker { responseCount: number }
 
@@ -77,26 +82,76 @@ export async function preparePromptForDelivery(
   if (!editor) return { status: 'editor-not-found' };
 
   const paste = await pastePrompt(document, editor, prompt);
+  const normalizedPrompt = normalizeEditorText(prompt);
+  const deadline = Date.now() + PASTE_READY_TIMEOUT_MS;
+  let sendWaitDeadline: number | undefined;
   await delay(PASTE_SETTLE_MS);
 
-  const completeInEditor = normalizeEditorText(readEditorText(editor)) === normalizeEditorText(prompt);
-  const sendButton = findFirst<HTMLButtonElement>(document, selectors.sendButtons);
-  const sendAvailable = Boolean(
-    sendButton && !sendButton.disabled && sendButton.getAttribute('aria-disabled') !== 'true',
-  );
+  let settled: PreparedDelivery | undefined;
+  while (!settled) {
+    const completeInEditor = normalizeEditorText(readEditorText(editor)) === normalizedPrompt;
+    const sendButton = findFirst<HTMLButtonElement>(document, selectors.sendButtons);
+    const sendAvailable = Boolean(
+      sendButton && !sendButton.disabled && sendButton.getAttribute('aria-disabled') !== 'true',
+    );
+    const attachment = detectPasteAttachment(document);
 
-  // Long-paste handlers (e.g. Perplexity) may move text into an attachment instead of the field.
-  // Trust that path only when the page cancelled the default paste and Send is available.
-  if (!completeInEditor) {
-    if (paste.customHandled && sendAvailable) {
-      return { status: 'ready', send: () => sendButton!.click() };
+    if (completeInEditor) {
+      if (sendAvailable) {
+        settled = { status: 'ready', send: () => sendButton!.click() };
+        break;
+      }
+      sendWaitDeadline ??= Date.now() + SEND_BUTTON_WAIT_MS;
+      if (Date.now() >= sendWaitDeadline) {
+        settled = { status: 'send-unavailable' };
+        break;
+      }
+      await delay(PASTE_POLL_MS);
+      continue;
     }
-    return { status: 'incomplete-insertion' };
+
+    // Direct insert already finished and the field does not hold the full prompt.
+    if (!paste.customHandled) {
+      settled = { status: 'incomplete-insertion' };
+      break;
+    }
+
+    // Long-paste handlers (Perplexity, Qwen) may move text into an attachment instead of the field.
+    if (sendAvailable) {
+      if (attachment?.ready) {
+        settled = { status: 'ready', send: () => sendButton!.click() };
+        break;
+      }
+      // Qwen shows Send while the pasted file is still "Parsing…"; wait or fail closed.
+      if (attachment && !attachment.ready) {
+        if (Date.now() >= deadline) {
+          settled = { status: 'incomplete-insertion' };
+          break;
+        }
+        await delay(PASTE_POLL_MS);
+        continue;
+      }
+      if (destination === 'qwen') {
+        if (Date.now() >= deadline) {
+          settled = { status: 'incomplete-insertion' };
+          break;
+        }
+        await delay(PASTE_POLL_MS);
+        continue;
+      }
+      // Perplexity and similar: empty field + custom paste + Send is the attachment path.
+      settled = { status: 'ready', send: () => sendButton!.click() };
+      break;
+    }
+
+    if (Date.now() >= deadline) {
+      settled = { status: 'incomplete-insertion' };
+      break;
+    }
+    await delay(PASTE_POLL_MS);
   }
-  if (!sendAvailable) {
-    return { status: 'send-unavailable' };
-  }
-  return { status: 'ready', send: () => sendButton!.click() };
+
+  return settled!;
 }
 
 export function createDeliveryMarker(document: Document, destination: AiDestination): DeliveryMarker {
@@ -143,6 +198,21 @@ async function pastePrompt(
 
   insertPromptDirectly(document, editor, prompt);
   return { customHandled: false };
+}
+
+function detectPasteAttachment(document: Document): { ready: boolean } | undefined {
+  const qwenFile = document.querySelector('.message-input-column-file, .file-card-list');
+  if (qwenFile) {
+    const text = qwenFile.textContent ?? '';
+    return { ready: !/parsing|uploading|processing/i.test(text) };
+  }
+
+  const generic = document.querySelector(
+    '[class*="attachment"], [data-testid*="attachment"], [class*="file-card"], [class*="FileCard"]',
+  );
+  if (!generic) return undefined;
+  const text = generic.textContent ?? '';
+  return { ready: !/parsing|uploading|processing/i.test(text) };
 }
 
 function createPasteEvent(prompt: string): ClipboardEvent {
