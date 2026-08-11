@@ -1,22 +1,17 @@
 import type { AiDestination, StoredOperation } from '@src/features/handoff/large-payload';
-import {
-  prepareYouTubeSummary,
-  type CaptionTrack,
-  type YouTubePage,
-} from '@src/features/youtube-transcript/transcript-operation';
+import type { PreparedSourceSummary, SummarySource } from '@src/features/summary-services/summary-service';
 
 interface StartSummaryOperationInput {
   destination: AiDestination;
-  summaryLanguage: string;
-  selectedTrackId?: string;
-  page: YouTubePage;
-  fetchCaption: (track: CaptionTrack) => Promise<string>;
+  prepare: () => Promise<PreparedSourceSummary>;
   save: (prompt: string, destination: AiDestination) => Promise<StoredOperation>;
 }
 
 export interface StartedSummaryOperation {
   operationId: string;
-  trackId: string;
+  destination: AiDestination;
+  source: SummarySource;
+  variantId?: string;
   charLength: number;
   estimatedTokens: number;
   expiresAt: number;
@@ -24,22 +19,16 @@ export interface StartedSummaryOperation {
 
 export async function startSummaryOperation({
   destination,
-  summaryLanguage,
-  selectedTrackId,
-  page,
-  fetchCaption,
+  prepare,
   save,
 }: StartSummaryOperationInput): Promise<StartedSummaryOperation> {
-  const prepared = await prepareYouTubeSummary({
-    page,
-    summaryLanguage,
-    selectedTrackId,
-    fetchCaption,
-  });
+  const prepared = await prepare();
   const operation = await save(prepared.prompt, destination);
   return {
     operationId: operation.id,
-    trackId: prepared.track.id,
+    destination,
+    source: prepared.source,
+    variantId: prepared.variantId,
     charLength: prepared.prompt.length,
     estimatedTokens: Math.ceil(prepared.prompt.length / 4),
     expiresAt: operation.expiresAt,

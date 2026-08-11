@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 
 import type { AiDestination } from '@src/features/handoff/large-payload';
 import { canCancelOperation } from '@src/features/summary-operation/operation-coordinator';
-import { selectCaptionTrack, type YouTubePage } from '@src/features/youtube-transcript/transcript-operation';
+import { isYouTubePage, selectCaptionTrack, type YouTubePage } from '@src/features/youtube-transcript/transcript-operation';
 import { AI_DESTINATIONS, DESTINATION_NAMES } from '@src/shared/destinations';
 import { LARGE_PROMPT_WARNING_TOKENS } from '@src/shared/operation-policy';
 import { isRecoverableOperation, isTerminalOperation, type SummaryOperationState } from '@src/shared/operation-state';
+import { summaryPageType, type SummaryPage } from '@src/shared/summary-page';
 
 interface PopupState {
-  page?: YouTubePage;
+  page?: SummaryPage;
   summaryLanguage: string;
   selectedDestinations: AiDestination[];
   operation?: SummaryOperationState;
@@ -18,7 +19,7 @@ export interface PopupClient {
   load(): Promise<PopupState>;
   saveSummaryLanguage(language: string): Promise<void>;
   saveDestinations(destinations: AiDestination[]): Promise<void>;
-  prepare(destination: AiDestination, summaryLanguage: string, selectedTrackId?: string): Promise<SummaryOperationState>;
+  prepare(destination: AiDestination, summaryLanguage: string, page: SummaryPage, selectedTrackId?: string): Promise<SummaryOperationState>;
   open(operationId: string, destination: AiDestination): Promise<SummaryOperationState>;
   refresh(operationId: string): Promise<SummaryOperationState | undefined>;
   retry(operationId: string): Promise<SummaryOperationState>;
@@ -44,7 +45,7 @@ export default function Popup({ client }: { client: PopupClient }) {
     client.load().then((loaded) => {
       if (!active) return;
       setState(loaded);
-      setSelectedTrackId(loaded.page ? selectCaptionTrack(loaded.page)?.id : undefined);
+      setSelectedTrackId(loaded.page && isYouTubePage(loaded.page) ? selectCaptionTrack(loaded.page)?.id : undefined);
       setStatus(loaded.operation?.statusMessage || 'Ready to summarize');
     }).catch((cause: unknown) => { if (active) setError(getErrorMessage(cause)); });
     return () => { active = false; };
@@ -65,11 +66,12 @@ export default function Popup({ client }: { client: PopupClient }) {
     return () => window.clearInterval(timer);
   }, [client, state?.operation?.id, state?.operation?.status]);
 
+  const youtubePage = state?.page && isYouTubePage(state.page) ? state.page : undefined;
   const selectedTrack = useMemo(
-    () => state?.page?.tracks.find((track) => track.id === selectedTrackId),
-    [selectedTrackId, state?.page],
+    () => youtubePage?.tracks.find((track) => track.id === selectedTrackId),
+    [selectedTrackId, youtubePage],
   );
-  const captionsMissing = state?.page?.tracks.length === 0;
+  const captionsMissing = youtubePage?.tracks.length === 0;
   const operation = state?.operation;
 
   const changeLanguage = async (language: string) => {
@@ -94,9 +96,9 @@ export default function Popup({ client }: { client: PopupClient }) {
     if (!state?.page || busy) return;
     setBusy(true);
     setError(undefined);
-    setStatus('Retrieving the complete transcript…');
+    setStatus(preparationMessage(state.page));
     try {
-      const prepared = await client.prepare(destination, state.summaryLanguage, selectedTrackId);
+      const prepared = await client.prepare(destination, state.summaryLanguage, state.page, selectedTrackId);
       setState({ ...state, operation: prepared });
       setStatus(sizeMessage(prepared));
       await nextPaint();
@@ -146,7 +148,7 @@ export default function Popup({ client }: { client: PopupClient }) {
     <main className="popup-shell">
       <header className="popup-header">
         <span className="eyebrow">Summarize It</span>
-        <h1>{operation?.videoTitle || state?.page?.title || 'YouTube → AI'}</h1>
+        <h1>{operation?.source.title || state?.page?.title || 'Page → AI'}</h1>
       </header>
 
       {error && <div className="notice error" role="alert">{error}</div>}
@@ -169,15 +171,15 @@ export default function Popup({ client }: { client: PopupClient }) {
               {LANGUAGES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
-          {state.page.tracks.length > 1 && (
+          {youtubePage && youtubePage.tracks.length > 1 && (
             <label>
               <span>Captions</span>
               <select aria-label="Caption track" value={selectedTrackId} disabled={busy} onChange={(event) => setSelectedTrackId(event.target.value)}>
-                {state.page.tracks.map((track) => <option key={track.id} value={track.id}>{captionTrackLabel(track)}</option>)}
+                {youtubePage.tracks.map((track) => <option key={track.id} value={track.id}>{captionTrackLabel(track)}</option>)}
               </select>
             </label>
           )}
-          <div className="track-note">Source: {selectedTrack ? captionTrackLabel(selectedTrack) : 'selected captions'}</div>
+          <div className="track-note">Source: {sourceLabel(state.page, selectedTrack)}</div>
           <label>
             <span>AI services</span>
             <select
@@ -250,6 +252,18 @@ function sizeMessage(operation: Pick<SummaryOperationState, 'charLength' | 'esti
 }
 function getErrorMessage(cause: unknown): string { return cause instanceof Error ? cause.message : 'Unknown error'; }
 function nextPaint(): Promise<void> { return new Promise((resolve) => window.setTimeout(resolve, 700)); }
+function preparationMessage(page: SummaryPage): string {
+  const type = summaryPageType(page);
+  if (type === 'youtube') return 'Retrieving the complete transcript…';
+  if (type === 'pdf') return 'Extracting the complete PDF text…';
+  return 'Extracting the main page content…';
+}
+function sourceLabel(page: SummaryPage, track?: YouTubePage['tracks'][number]): string {
+  const type = summaryPageType(page);
+  if (type === 'pdf') return 'PDF document';
+  if (type === 'html') return 'web page';
+  return track ? captionTrackLabel(track) : 'selected captions';
+}
 function captionTrackLabel(track: YouTubePage['tracks'][number]): string {
   let language = track.languageCode;
   try {

@@ -1,4 +1,5 @@
 import type { AiDestination } from '@src/features/handoff/large-payload';
+import { isSummarySource, type SummarySource } from '@src/features/summary-services/summary-service';
 import { isAiDestination } from '@src/shared/destinations';
 
 export const OPERATION_STATUSES = [
@@ -10,9 +11,8 @@ export type OperationStatus = typeof OPERATION_STATUSES[number];
 export interface SummaryOperationState {
   id: string;
   destination: AiDestination;
-  videoId: string;
-  videoTitle: string;
-  trackId: string;
+  source: SummarySource;
+  variantId?: string;
   charLength: number;
   estimatedTokens: number;
   createdAt: number;
@@ -37,8 +37,8 @@ export function isSummaryOperationState(value: unknown): value is SummaryOperati
   const operation = value as Partial<SummaryOperationState>;
   return typeof operation.id === 'string'
     && isAiDestination(operation.destination)
-    && typeof operation.videoId === 'string'
-    && typeof operation.videoTitle === 'string'
+    && isSummarySource(operation.source)
+    && (operation.variantId === undefined || typeof operation.variantId === 'string')
     && typeof operation.charLength === 'number'
     && typeof operation.estimatedTokens === 'number'
     && typeof operation.status === 'string'

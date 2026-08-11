@@ -13,14 +13,16 @@ import {
 
 function operation(overrides: Partial<SummaryOperationState> = {}): SummaryOperationState {
   return {
-    id: 'one', destination: 'chatgpt', videoId: 'video', videoTitle: 'Video', trackId: 'en',
+    id: 'one', destination: 'chatgpt',
+    source: { type: 'youtube', id: 'video', title: 'Video', url: 'https://www.youtube.com/watch?v=video' },
+    variantId: 'en',
     charLength: 100, estimatedTokens: 25, createdAt: 1, expiresAt: 2,
     status: 'opening', statusMessage: 'Opening', targetTabId: 10, ...overrides,
   };
 }
 
 describe('operation coordinator', () => {
-  it('deduplicates only a prepared operation for the same video and destination', () => {
+  it('deduplicates only a prepared operation for the same source and destination', () => {
     const prepared = operation({ status: 'prepared' });
     expect(findDuplicateOperation([prepared], 'video', 'chatgpt')).toBe(prepared);
     expect(findDuplicateOperation([prepared], 'video', 'perplexity')).toBeUndefined();

@@ -1,15 +1,18 @@
 import browser from 'webextension-polyfill';
 
-import { LargePayloadStore } from '@src/features/handoff/large-payload';
-import { isYouTubePage } from '@src/features/youtube-transcript/transcript-operation';
+import { LargePayloadStore, type AiDestination } from '@src/features/handoff/large-payload';
+import { createPdfPage, isLikelyPdfUrl, type PdfPage } from '@src/features/summary-services/pdf-page';
+import { startSummaryOperation } from '@src/features/summary-operation/start-summary-operation';
 import { sendBackgroundMessage } from '@src/platform/background-messaging';
 import { browserLocalStorage } from '@src/platform/browser-storage';
 import { AI_DESTINATIONS, DEFAULT_DESTINATIONS, isAiDestination } from '@src/shared/destinations';
 import {
   isOperationResponse,
   type OperationResponse,
-  type YouTubeContentRequest,
+  type SummaryContentRequest,
 } from '@src/shared/messages';
+import { isSummaryPage, type SummaryPage } from '@src/shared/summary-page';
+import type { SummaryOperationState } from '@src/shared/operation-state';
 
 import type { PopupClient } from './Popup';
 
@@ -25,25 +28,28 @@ export const browserPopupClient: PopupClient = {
       if (tabOperation.operation) return { summaryLanguage, selectedDestinations, operation: tabOperation.operation };
     }
 
-    if (activeTab?.id && activeTab.url?.startsWith('https://www.youtube.com/watch')) {
-      const page = await getYouTubePage(activeTab.id);
+    if (activeTab?.id && isSummarizableUrl(activeTab.url)) {
+      const page = await getSummaryPage(activeTab.id, activeTab.url!, activeTab.title);
       return { page, summaryLanguage, selectedDestinations };
     }
 
     const activeOperation = await sendBackgroundMessage({ type: 'GET_ACTIVE_OPERATION' });
     if (activeOperation.operation) return { summaryLanguage, selectedDestinations, operation: activeOperation.operation };
-    throw new Error('Open a standard YouTube video');
+    throw new Error('Open a YouTube video, web page, or PDF');
   },
   async saveSummaryLanguage(summaryLanguage) { await browser.storage.local.set({ summaryLanguage }); },
   async saveDestinations(selectedDestinations) { await browser.storage.local.set({ selectedDestinations }); },
-  async prepare(destination, summaryLanguage, selectedTrackId) {
+  async prepare(destination, summaryLanguage, page, selectedTrackId) {
     const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
-    if (!activeTab?.id) throw new Error('The YouTube tab is unavailable');
+    if (!activeTab?.id) throw new Error('The source tab is unavailable');
+    if ('type' in page && page.type === 'pdf') {
+      return preparePdfSummary(destination, summaryLanguage, page);
+    }
     const request = {
       type: 'START_SUMMARY', destination, summaryLanguage, selectedTrackId,
-    } satisfies YouTubeContentRequest;
+    } satisfies SummaryContentRequest;
     const response: unknown = await browser.tabs.sendMessage(activeTab.id, request);
-    if (!isOperationResponse(response)) throw new Error('Invalid response from the YouTube adapter');
+    if (!isOperationResponse(response)) throw new Error('Invalid response from the page adapter');
     return requireOperation(response, 'Could not prepare the summary');
   },
   async open(operationId, destination) {
@@ -65,11 +71,51 @@ export const browserPopupClient: PopupClient = {
   },
 };
 
-async function getYouTubePage(tabId: number) {
-  const request = { type: 'GET_YOUTUBE_PAGE' } satisfies YouTubeContentRequest;
-  const response: unknown = await browser.tabs.sendMessage(tabId, request);
-  if (!isYouTubePage(response)) throw new Error('Invalid response from the YouTube adapter');
-  return response;
+async function getSummaryPage(tabId: number, url: string, title?: string): Promise<SummaryPage> {
+  if (isLikelyPdfUrl(url)) return createPdfPage(url, title);
+  try {
+    const request = { type: 'GET_SUMMARY_PAGE' } satisfies SummaryContentRequest;
+    const response: unknown = await browser.tabs.sendMessage(tabId, request);
+    if (isSummaryPage(response)) return response;
+  } catch {
+    // PDF viewers do not expose a normal content-script document.
+  }
+  const response = await sendBackgroundMessage({ type: 'GET_PDF_PAGE', url, title });
+  if (response.ok && 'page' in response && isSummaryPage(response.page)) return response.page;
+  throw new Error('Could not read this page');
+}
+
+async function preparePdfSummary(
+  destination: AiDestination,
+  summaryLanguage: string,
+  page: PdfPage,
+): Promise<SummaryOperationState> {
+  const handoff = new LargePayloadStore(browserLocalStorage);
+  let storedOperationId: string | undefined;
+  try {
+    const response = await fetch(page.url, { credentials: 'include' });
+    if (!response.ok) throw new Error(`Could not download the PDF (${response.status})`);
+    const contentType = response.headers.get('content-type')?.toLocaleLowerCase();
+    if (contentType && !contentType.includes('application/pdf') && !isLikelyPdfUrl(page.url)) {
+      throw new Error('The active page is not a PDF');
+    }
+
+    const data = await response.arrayBuffer();
+    const { pdfSummaryService } = await import('@src/features/summary-services/pdf-summary-service');
+    const result = await startSummaryOperation({
+      destination,
+      prepare: () => pdfSummaryService.prepare({ data, url: page.url, title: page.title, summaryLanguage }),
+      save: (prompt, target) => handoff.save(prompt, target),
+    });
+    storedOperationId = result.operationId;
+    const registered = await sendBackgroundMessage({ type: 'REGISTER_OPERATION', operation: result });
+    const operation = requireOperation(registered, 'Could not prepare the PDF summary');
+    storedOperationId = undefined;
+    return operation;
+  } catch (cause) {
+    if (storedOperationId) await handoff.cancel(storedOperationId);
+    throw cause;
+  }
 }
 function requireOperation(response: OperationResponse, fallback: string) {
   if (!response.ok || !response.operation) throw new Error(response.error || fallback);
@@ -100,4 +146,7 @@ function isAiUrl(url?: string): boolean {
     'https://chatgpt.com/', 'https://chat.openai.com/', 'https://www.perplexity.ai/', 'https://perplexity.ai/',
     'https://claude.ai/', 'https://gemini.google.com/', 'https://chat.qwen.ai/', 'https://chat.deepseek.com/',
   ].some((origin) => url.startsWith(origin)));
+}
+function isSummarizableUrl(url?: string): boolean {
+  return Boolean(url && /^(https?|file):/i.test(url) && !isAiUrl(url));
 }

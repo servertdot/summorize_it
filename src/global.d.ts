@@ -9,3 +9,7 @@ declare module '*.json' {
   const content: string;
   export default content;
 }
+
+declare module 'pdfjs-dist/legacy/build/pdf.worker.min.mjs' {
+  export const WorkerMessageHandler: unknown;
+}

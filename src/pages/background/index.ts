@@ -1,6 +1,7 @@
 import browser, { type Runtime } from 'webextension-polyfill';
 
 import { LargePayloadStore, type AiDestination } from '@src/features/handoff/large-payload';
+import { createPdfPage } from '@src/features/summary-services/pdf-page';
 import {
   canClaimOperationInTab,
   canCancelOperation,
@@ -35,6 +36,8 @@ browser.runtime.onMessage.addListener(async (message: unknown, sender: Runtime.M
   switch (message.type) {
     case 'REGISTER_OPERATION':
       return registerOperation(message);
+    case 'GET_PDF_PAGE':
+      return inspectPdfPage(message.url, message.title);
     case 'OPEN_DESTINATION':
       return openDestination(message.operationId, message.destination);
     case 'RETRY_OPERATION': {
@@ -77,7 +80,11 @@ async function registerOperation(
   message: Extract<BackgroundRequest, { type: 'REGISTER_OPERATION' }>,
 ): Promise<OperationResponse> {
   const response = await withRegistry<OperationResponse>(async (registry) => {
-    const duplicate = findDuplicateOperation(Object.values(registry), message.videoId, message.destination);
+    const duplicate = findDuplicateOperation(
+      Object.values(registry),
+      message.operation.source.id,
+      message.operation.destination,
+    );
     if (duplicate) {
       await new LargePayloadStore(browserLocalStorage).cancel(message.operation.operationId);
       return { registry, result: { ok: false, duplicate: true, operation: duplicate, error: 'This operation is already in progress' } };
@@ -85,16 +92,15 @@ async function registerOperation(
 
     const operation: SummaryOperationState = {
       id: message.operation.operationId,
-      destination: message.destination,
-      videoId: message.videoId,
-      videoTitle: message.videoTitle,
-      trackId: message.operation.trackId,
+      destination: message.operation.destination,
+      source: message.operation.source,
+      variantId: message.operation.variantId,
       charLength: message.operation.charLength,
       estimatedTokens: message.operation.estimatedTokens,
       createdAt: Date.now(),
-      expiresAt: message.expiresAt,
+      expiresAt: message.operation.expiresAt,
       status: 'prepared',
-      statusMessage: 'Transcript prepared',
+      statusMessage: `${sourceName(message.operation.source.type)} prepared`,
     };
     return { registry: { ...registry, [operation.id]: operation }, result: { ok: true, operation } };
   });
@@ -104,6 +110,19 @@ async function registerOperation(
     });
   }
   return response;
+}
+
+async function inspectPdfPage(url: string, title?: string): Promise<{ ok: boolean; page?: ReturnType<typeof createPdfPage>; error?: string }> {
+  try {
+    const response = await fetch(url, { method: 'HEAD', credentials: 'include' });
+    if (!response.ok) throw new Error(`Could not access the document (${response.status})`);
+    if (!response.headers.get('content-type')?.toLocaleLowerCase().includes('application/pdf')) {
+      return { ok: false, error: 'The active page is not a PDF' };
+    }
+    return { ok: true, page: createPdfPage(url, title) };
+  } catch (cause) {
+    return { ok: false, error: errorMessage(cause) };
+  }
 }
 
 async function openDestination(operationId: string, destination: AiDestination): Promise<OperationResponse> {
@@ -225,6 +244,11 @@ function targetKey(tabId: number): string { return `summary:target:${tabId}`; }
 function expiryAlarm(operationId: string): string { return `summary:expire:${operationId}`; }
 function failure(error: string): OperationResponse { return { ok: false, error }; }
 function errorMessage(cause: unknown): string { return cause instanceof Error ? cause.message : 'Could not open the tab'; }
+function sourceName(type: SummaryOperationState['source']['type']): string {
+  if (type === 'youtube') return 'Transcript';
+  if (type === 'pdf') return 'PDF';
+  return 'Page';
+}
 function isTarget(value: unknown): value is { operationId: string; destination: AiDestination } {
   if (!value || typeof value !== 'object') return false;
   const target = value as { operationId?: unknown; destination?: unknown };

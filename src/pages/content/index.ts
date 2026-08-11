@@ -1,7 +1,8 @@
 import { runDestinationDelivery } from './destination-content';
+import { registerHtmlContent } from './html-content';
 import { registerYouTubeContent } from './youtube-content';
 
-if (location.hostname === 'www.youtube.com') {
+if (location.hostname === 'www.youtube.com' && location.pathname === '/watch') {
   registerYouTubeContent();
 } else if (location.hostname === 'chatgpt.com' || location.hostname === 'chat.openai.com') {
   void runDestinationDelivery('chatgpt');
@@ -15,4 +16,6 @@ if (location.hostname === 'www.youtube.com') {
   void runDestinationDelivery('qwen');
 } else if (location.hostname === 'chat.deepseek.com') {
   void runDestinationDelivery('deepseek');
+} else {
+  registerHtmlContent();
 }

@@ -17,35 +17,23 @@ describe('summary operation', () => {
 
     const result = await startSummaryOperation({
       destination: 'perplexity',
-      summaryLanguage: 'ru',
-      page: {
-        videoId: 'video',
-        title: 'Video title',
-        url: 'https://www.youtube.com/watch?v=video',
-        pageLanguage: 'en',
-        tracks: [{
-          id: 'track', languageCode: 'en', label: 'English', kind: 'manual',
-          baseUrl: 'https://www.youtube.com/api/timedtext?track',
-        }],
-      },
-      fetchCaption: async () => '<text start="0">Complete transcript.</text>',
+      prepare: async () => ({
+        source: { type: 'youtube', id: 'video', title: 'Video title', url: 'https://www.youtube.com/watch?v=video' },
+        variantId: 'track',
+        prompt: 'Create a summary.\n\nComplete transcript.',
+      }),
       save,
     });
 
     expect(events).toEqual([expect.stringMatching(/^saved:perplexity:/)]);
-    expect(result).toMatchObject({ operationId: 'one-time-id', trackId: 'track', expiresAt: 2 });
+    expect(result).toMatchObject({ operationId: 'one-time-id', variantId: 'track', expiresAt: 2 });
     expect(result.charLength).toBeGreaterThan(20);
   });
 
   it('does not open a destination when captions are missing', async () => {
     await expect(startSummaryOperation({
       destination: 'chatgpt',
-      summaryLanguage: 'ru',
-      page: {
-        videoId: 'video', title: 'No captions', url: 'https://www.youtube.com/watch?v=video',
-        pageLanguage: 'ru', tracks: [],
-      },
-      fetchCaption: vi.fn(),
+      prepare: async () => { throw new Error('No captions found'); },
       save: vi.fn(),
     })).rejects.toThrow('No captions found');
   });

@@ -22,12 +22,13 @@ function makeClient(overrides: Partial<PopupClient> = {}): PopupClient {
     saveSummaryLanguage: vi.fn().mockResolvedValue(undefined),
     saveDestinations: vi.fn().mockResolvedValue(undefined),
     prepare: vi.fn().mockResolvedValue({
-      id: 'id', destination: 'chatgpt', videoId: 'video', videoTitle: 'Video title', trackId: 'ru',
+      id: 'id', destination: 'chatgpt',
+      source: { type: 'youtube', id: 'video', title: 'Video title', url: page.url }, variantId: 'ru',
       charLength: 1200, estimatedTokens: 300, createdAt: 1, expiresAt: 2,
       status: 'prepared', statusMessage: 'Transcript prepared',
     }),
     open: vi.fn().mockImplementation(async (id, destination) => ({
-      id, destination, videoId: 'video', videoTitle: 'Video title', trackId: 'ru',
+      id, destination, source: { type: 'youtube', id: 'video', title: 'Video title', url: page.url }, variantId: 'ru',
       charLength: 1200, estimatedTokens: 300, createdAt: 1, expiresAt: 2,
       status: 'opening', statusMessage: 'Opening…',
     })),
@@ -57,7 +58,7 @@ describe('popup', () => {
     const chatGptButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'ChatGPT');
     await act(async () => chatGptButton?.click());
 
-    expect(client.prepare).toHaveBeenCalledWith('chatgpt', 'ru', 'ru');
+    expect(client.prepare).toHaveBeenCalledWith('chatgpt', 'ru', page, 'ru');
   });
 
   it('persists chosen services and renders them as summary buttons', async () => {
@@ -78,7 +79,7 @@ describe('popup', () => {
     expect(client.saveDestinations).toHaveBeenCalledWith(['chatgpt', 'perplexity', 'claude']);
     const claudeButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Claude');
     await act(async () => claudeButton?.click());
-    expect(client.prepare).toHaveBeenCalledWith('claude', 'ru', 'ru');
+    expect(client.prepare).toHaveBeenCalledWith('claude', 'ru', page, 'ru');
   });
 
   it('shows an immediate error when the video has no caption tracks', async () => {
@@ -97,11 +98,33 @@ describe('popup', () => {
     expect(container.querySelectorAll('button')).toHaveLength(0);
   });
 
+  it('offers summarization for an HTML page without YouTube-only controls', async () => {
+    const htmlPage = { type: 'html' as const, id: 'https://example.com/article', title: 'Article', url: 'https://example.com/article' };
+    const client = makeClient({
+      load: vi.fn().mockResolvedValue({
+        page: htmlPage, summaryLanguage: 'en', selectedDestinations: ['chatgpt'],
+      }),
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    await act(async () => createRoot(container).render(<Popup client={client} />));
+    await act(async () => Promise.resolve());
+
+    expect(container.textContent).toContain('Article');
+    expect(container.textContent).toContain('Source: web page');
+    expect(container.querySelector('select[aria-label="Caption track"]')).toBeNull();
+    const chatGptButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'ChatGPT');
+    await act(async () => chatGptButton?.click());
+    expect(client.prepare).toHaveBeenCalledWith('chatgpt', 'en', htmlPage, undefined);
+  });
+
   it('warns before automatically opening a very large prompt from the same click', async () => {
     vi.useFakeTimers();
     const client = makeClient({
       prepare: vi.fn().mockResolvedValue({
-        id: 'large', destination: 'perplexity', videoId: 'video', videoTitle: 'Video title', trackId: 'ru',
+        id: 'large', destination: 'perplexity',
+        source: { type: 'youtube', id: 'video', title: 'Video title', url: page.url }, variantId: 'ru',
         charLength: 800_000, estimatedTokens: 200_000, createdAt: 1, expiresAt: 2,
         status: 'prepared', statusMessage: 'Transcript prepared',
       }),
@@ -123,7 +146,8 @@ describe('popup', () => {
 
   it('offers retry, copy, and cancel for a recoverable operation', async () => {
     const operation = {
-      id: 'recover', destination: 'chatgpt' as const, videoId: 'video', videoTitle: 'Video title', trackId: 'ru',
+      id: 'recover', destination: 'chatgpt' as const,
+      source: { type: 'youtube' as const, id: 'video', title: 'Video title', url: page.url }, variantId: 'ru',
       charLength: 1200, estimatedTokens: 300, createdAt: 1, expiresAt: 2,
       status: 'recoverable-error' as const, statusMessage: 'Prompt saved',
     };

@@ -257,6 +257,7 @@ function createClipboardData(prompt: string): DataTransfer {
       if (type) store.delete(type);
       else store.clear();
     },
+    setDragImage: () => undefined,
     get types() { return Array.from(store.keys()); },
     files: [] as unknown as FileList,
     items: [] as unknown as DataTransferItemList,

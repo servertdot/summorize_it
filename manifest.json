@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Summarize It",
-  "description": "Send a complete timestamped YouTube transcript to your preferred AI assistant.",
+  "description": "Summarize YouTube videos, web pages, and PDF documents with your preferred AI assistant.",
   "action": {
     "default_popup": "src/pages/popup/index.html",
     "default_icon": {
@@ -14,15 +14,9 @@
   },
   "permissions": ["activeTab", "alarms", "clipboardWrite", "storage", "unlimitedStorage"],
   "host_permissions": [
-    "https://www.youtube.com/*",
-    "https://chatgpt.com/*",
-    "https://chat.openai.com/*",
-    "https://www.perplexity.ai/*",
-    "https://perplexity.ai/*",
-    "https://claude.ai/*",
-    "https://gemini.google.com/*",
-    "https://chat.qwen.ai/*",
-    "https://chat.deepseek.com/*"
+    "http://*/*",
+    "https://*/*",
+    "file:///*"
   ],
   "content_scripts": [
     {
@@ -33,15 +27,9 @@
     },
     {
       "matches": [
-        "https://www.youtube.com/*",
-        "https://chatgpt.com/*",
-        "https://chat.openai.com/*",
-        "https://www.perplexity.ai/*",
-        "https://perplexity.ai/*",
-        "https://claude.ai/*",
-        "https://gemini.google.com/*",
-        "https://chat.qwen.ai/*",
-        "https://chat.deepseek.com/*"
+        "http://*/*",
+        "https://*/*",
+        "file:///*"
       ],
       "js": ["src/pages/content/index.ts"],
       "run_at": "document_idle"

@@ -1,7 +1,7 @@
 {
   "name": "summarize-it",
-  "version": "0.2.1",
-  "description": "Send complete timestamped YouTube transcripts to your preferred AI assistant.",
+  "version": "0.3.0",
+  "description": "Summarize YouTube videos, web pages, and PDFs with your preferred AI assistant.",
   "license": "MIT",
   "scripts": {
     "build": "vite build --config vite.config.chrome.ts",
@@ -15,6 +15,8 @@
   },
   "type": "module",
   "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "pdfjs-dist": "5.4.149",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "webextension-polyfill": "^0.12.0"

@@ -8,11 +8,11 @@ const DUPLICATE_BLOCKING_STATUS = 'prepared';
 
 export function findDuplicateOperation(
   operations: Iterable<SummaryOperationState>,
-  videoId: string,
+  sourceId: string,
   destination: AiDestination,
 ): SummaryOperationState | undefined {
   return Array.from(operations).find((operation) =>
-    operation.videoId === videoId
+    operation.source.id === sourceId
     && operation.destination === destination
     && operation.status === DUPLICATE_BLOCKING_STATUS,
   );
