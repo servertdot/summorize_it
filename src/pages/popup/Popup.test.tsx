@@ -209,4 +209,18 @@ describe('popup', () => {
       'Write a B1-B2 English summary for a Russian learner.',
     );
   });
+
+  it('makes language and caption selects cover their full menu rows', async () => {
+    const client = makeClient();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    await act(async () => createRoot(container).render(<Popup client={client} />));
+    await act(async () => Promise.resolve());
+
+    const languageSelect = container.querySelector('select[aria-label="Summary language"]') as HTMLSelectElement;
+    const captionSelect = container.querySelector('select[aria-label="Caption track"]') as HTMLSelectElement;
+    expect(languageSelect.closest('.select-row')).not.toBeNull();
+    expect(captionSelect.closest('.select-row')).not.toBeNull();
+  });
 });
