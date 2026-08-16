@@ -35,6 +35,23 @@ describe('HTML summary service', () => {
     expect(prepared.prompt).not.toContain('Unrelated footer');
   });
 
+  it('uses a custom system prompt without replacing the extracted page content', async () => {
+    document.documentElement.innerHTML = `
+      <head><title>Readable article</title></head>
+      <body><article><p>This is the central argument with enough meaningful article text for extraction.</p></article></body>`;
+
+    const prepared = await htmlSummaryService.prepare({
+      document,
+      url: 'https://example.com/article',
+      summaryLanguage: 'ru',
+      systemPrompt: 'Write a B1-B2 English summary for a Russian learner.',
+    });
+
+    expect(prepared.prompt).toContain('Write a B1-B2 English summary for a Russian learner.');
+    expect(prepared.prompt).not.toContain('Write the summary in Russian.');
+    expect(prepared.prompt).toContain('central argument');
+  });
+
   it('describes a page before the full content is extracted', () => {
     document.documentElement.innerHTML = '<head><title>Page title</title></head><body />';
     expect(readHtmlPage(document, 'https://example.com/page')).toMatchObject({

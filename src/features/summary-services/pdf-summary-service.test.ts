@@ -29,6 +29,16 @@ describe('PDF summary service', () => {
     expect(prompt).toContain('cite the page numbers');
   });
 
+  it('uses a custom system prompt and still includes the extracted pages', () => {
+    const page = createPdfPage('https://example.com/annual-report.pdf');
+    const content = '[Page 1]\nRevenue grew.';
+    const prompt = composePdfSummaryPrompt(page, content, 'uk', 'Write a B1-B2 English summary for a Russian learner.');
+
+    expect(prompt).toContain('Write a B1-B2 English summary for a Russian learner.');
+    expect(prompt).not.toContain('Write the summary in Ukrainian.');
+    expect(prompt).toContain(content);
+  });
+
   it('extracts text through PDF.js and preserves the page marker', async () => {
     const bytes = new TextEncoder().encode(createTextPdf('Hello from a real PDF page.'));
     const prepared = await pdfSummaryService.prepare({

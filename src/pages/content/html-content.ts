@@ -21,6 +21,7 @@ export function registerHtmlContent(): void {
           document,
           url: location.href,
           summaryLanguage: message.summaryLanguage,
+          systemPrompt: message.systemPrompt,
         }),
         save: (prompt, destination) => handoff.save(prompt, destination),
       });

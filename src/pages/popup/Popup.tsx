@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import type { AiDestination } from '@src/features/handoff/large-payload';
 import { canCancelOperation } from '@src/features/summary-operation/operation-coordinator';
+import { defaultSystemPrompt, sourceContentInsertionHint } from '@src/features/summary-services/summary-prompt';
 import { isYouTubePage, selectCaptionTrack, type YouTubePage } from '@src/features/youtube-transcript/transcript-operation';
 import { AI_DESTINATIONS, DESTINATION_NAMES } from '@src/shared/destinations';
 import { LARGE_PROMPT_WARNING_TOKENS } from '@src/shared/operation-policy';
@@ -11,6 +12,7 @@ import { summaryPageType, type SummaryPage } from '@src/shared/summary-page';
 interface PopupState {
   page?: SummaryPage;
   summaryLanguage: string;
+  systemPrompt: string;
   selectedDestinations: AiDestination[];
   operation?: SummaryOperationState;
 }
@@ -18,8 +20,9 @@ interface PopupState {
 export interface PopupClient {
   load(): Promise<PopupState>;
   saveSummaryLanguage(language: string): Promise<void>;
+  saveSystemPrompt(systemPrompt: string): Promise<void>;
   saveDestinations(destinations: AiDestination[]): Promise<void>;
-  prepare(destination: AiDestination, summaryLanguage: string, page: SummaryPage, selectedTrackId?: string): Promise<SummaryOperationState>;
+  prepare(destination: AiDestination, summaryLanguage: string, page: SummaryPage, selectedTrackId?: string, systemPrompt?: string): Promise<SummaryOperationState>;
   open(operationId: string, destination: AiDestination): Promise<SummaryOperationState>;
   refresh(operationId: string): Promise<SummaryOperationState | undefined>;
   retry(operationId: string): Promise<SummaryOperationState>;
@@ -80,6 +83,20 @@ export default function Popup({ client }: { client: PopupClient }) {
     await client.saveSummaryLanguage(language);
   };
 
+  const changeSystemPrompt = async (value: string) => {
+    if (!state?.page) return;
+    const defaultPrompt = defaultSystemPrompt(summaryPageType(state.page), state.summaryLanguage);
+    const systemPrompt = value === defaultPrompt ? '' : value;
+    setState({ ...state, systemPrompt });
+    await client.saveSystemPrompt(systemPrompt);
+  };
+
+  const resetSystemPrompt = async () => {
+    if (!state) return;
+    setState({ ...state, systemPrompt: '' });
+    await client.saveSystemPrompt('');
+  };
+
   const toggleDestination = async (destination: AiDestination) => {
     if (!state || busy) return;
     const selected = state.selectedDestinations.includes(destination);
@@ -98,7 +115,7 @@ export default function Popup({ client }: { client: PopupClient }) {
     setError(undefined);
     setStatus(preparationMessage(state.page));
     try {
-      const prepared = await client.prepare(destination, state.summaryLanguage, state.page, selectedTrackId);
+      const prepared = await client.prepare(destination, state.summaryLanguage, state.page, selectedTrackId, state.systemPrompt || undefined);
       setState({ ...state, operation: prepared });
       setStatus(sizeMessage(prepared));
       await nextPaint();
@@ -171,6 +188,14 @@ export default function Popup({ client }: { client: PopupClient }) {
               {LANGUAGES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
+          <SystemPromptEditor
+            page={state.page}
+            summaryLanguage={state.summaryLanguage}
+            systemPrompt={state.systemPrompt}
+            disabled={busy}
+            onChange={(value) => void changeSystemPrompt(value)}
+            onReset={() => void resetSystemPrompt()}
+          />
           {youtubePage && youtubePage.tracks.length > 1 && (
             <label>
               <span>Captions</span>
@@ -223,6 +248,31 @@ export default function Popup({ client }: { client: PopupClient }) {
 
       <footer aria-live="polite"><span className={busy ? 'pulse' : ''} />{status}</footer>
     </main>
+  );
+}
+
+function SystemPromptEditor({ page, summaryLanguage, systemPrompt, disabled, onChange, onReset }: {
+  page: SummaryPage; summaryLanguage: string; systemPrompt: string; disabled: boolean; onChange: (value: string) => void; onReset: () => void;
+}) {
+  const sourceType = summaryPageType(page);
+  const defaultPrompt = defaultSystemPrompt(sourceType, summaryLanguage);
+  const editorValue = systemPrompt || defaultPrompt;
+  const isCustom = Boolean(systemPrompt);
+  return (
+    <details className="system-prompt">
+      <summary>System prompt</summary>
+      <div className="system-prompt-editor">
+        <textarea
+          aria-label="System prompt"
+          value={editorValue}
+          disabled={disabled}
+          rows={6}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <div className="system-prompt-source">{sourceContentInsertionHint(sourceType)}</div>
+      </div>
+      {isCustom && <button type="button" className="text-action" disabled={disabled} onClick={onReset}>Reset to default</button>}
+    </details>
   );
 }
 

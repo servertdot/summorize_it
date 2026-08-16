@@ -12,7 +12,7 @@ import {
 
 export type SummaryContentRequest =
   | { type: 'GET_SUMMARY_PAGE' }
-  | { type: 'START_SUMMARY'; destination: AiDestination; summaryLanguage: string; selectedTrackId?: string };
+  | { type: 'START_SUMMARY'; destination: AiDestination; summaryLanguage: string; selectedTrackId?: string; systemPrompt?: string };
 
 export type BackgroundRequest =
   | { type: 'REGISTER_OPERATION'; operation: StartedSummaryOperation }
@@ -63,7 +63,8 @@ export function isSummaryContentRequest(value: unknown): value is SummaryContent
   return value.type === 'START_SUMMARY'
     && isAiDestination(value.destination)
     && typeof value.summaryLanguage === 'string'
-    && (value.selectedTrackId === undefined || typeof value.selectedTrackId === 'string');
+    && (value.selectedTrackId === undefined || typeof value.selectedTrackId === 'string')
+    && (value.systemPrompt === undefined || typeof value.systemPrompt === 'string');
 }
 
 export function isBackgroundRequest(value: unknown): value is BackgroundRequest {

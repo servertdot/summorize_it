@@ -18,8 +18,9 @@ const page = {
 
 function makeClient(overrides: Partial<PopupClient> = {}): PopupClient {
   return {
-    load: vi.fn().mockResolvedValue({ page, summaryLanguage: 'ru', selectedDestinations: ['chatgpt', 'perplexity'] }),
+    load: vi.fn().mockResolvedValue({ page, summaryLanguage: 'ru', systemPrompt: '', selectedDestinations: ['chatgpt', 'perplexity'] }),
     saveSummaryLanguage: vi.fn().mockResolvedValue(undefined),
+    saveSystemPrompt: vi.fn().mockResolvedValue(undefined),
     saveDestinations: vi.fn().mockResolvedValue(undefined),
     prepare: vi.fn().mockResolvedValue({
       id: 'id', destination: 'chatgpt',
@@ -58,7 +59,7 @@ describe('popup', () => {
     const chatGptButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'ChatGPT');
     await act(async () => chatGptButton?.click());
 
-    expect(client.prepare).toHaveBeenCalledWith('chatgpt', 'ru', page, 'ru');
+    expect(client.prepare).toHaveBeenCalledWith('chatgpt', 'ru', page, 'ru', undefined);
   });
 
   it('persists chosen services and renders them as summary buttons', async () => {
@@ -79,13 +80,13 @@ describe('popup', () => {
     expect(client.saveDestinations).toHaveBeenCalledWith(['chatgpt', 'perplexity', 'claude']);
     const claudeButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Claude');
     await act(async () => claudeButton?.click());
-    expect(client.prepare).toHaveBeenCalledWith('claude', 'ru', page, 'ru');
+    expect(client.prepare).toHaveBeenCalledWith('claude', 'ru', page, 'ru', undefined);
   });
 
   it('shows an immediate error when the video has no caption tracks', async () => {
     const client = makeClient({
       load: vi.fn().mockResolvedValue({
-        page: { ...page, tracks: [] }, summaryLanguage: 'ru', selectedDestinations: ['chatgpt', 'perplexity'],
+        page: { ...page, tracks: [] }, summaryLanguage: 'ru', systemPrompt: '', selectedDestinations: ['chatgpt', 'perplexity'],
       }),
     });
     const container = document.createElement('div');
@@ -102,7 +103,7 @@ describe('popup', () => {
     const htmlPage = { type: 'html' as const, id: 'https://example.com/article', title: 'Article', url: 'https://example.com/article' };
     const client = makeClient({
       load: vi.fn().mockResolvedValue({
-        page: htmlPage, summaryLanguage: 'en', selectedDestinations: ['chatgpt'],
+        page: htmlPage, summaryLanguage: 'en', systemPrompt: '', selectedDestinations: ['chatgpt'],
       }),
     });
     const container = document.createElement('div');
@@ -116,7 +117,7 @@ describe('popup', () => {
     expect(container.querySelector('select[aria-label="Caption track"]')).toBeNull();
     const chatGptButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'ChatGPT');
     await act(async () => chatGptButton?.click());
-    expect(client.prepare).toHaveBeenCalledWith('chatgpt', 'en', htmlPage, undefined);
+    expect(client.prepare).toHaveBeenCalledWith('chatgpt', 'en', htmlPage, undefined, undefined);
   });
 
   it('warns before automatically opening a very large prompt from the same click', async () => {
@@ -153,7 +154,7 @@ describe('popup', () => {
     };
     const client = makeClient({
       load: vi.fn().mockResolvedValue({
-        summaryLanguage: 'ru', selectedDestinations: ['chatgpt', 'perplexity'], operation,
+        summaryLanguage: 'ru', systemPrompt: '', selectedDestinations: ['chatgpt', 'perplexity'], operation,
       }),
       retry: vi.fn().mockRejectedValue(new Error('retry failed')),
       copy: vi.fn().mockResolvedValue(undefined),
@@ -174,5 +175,38 @@ describe('popup', () => {
     expect(client.copy).toHaveBeenCalledWith('recover');
     await act(async () => buttons().find((button) => button.textContent === 'Cancel')?.click());
     expect(client.cancel).toHaveBeenCalledWith('recover');
+  });
+
+  it('lets the user edit the system prompt without showing the inserted transcript', async () => {
+    const client = makeClient();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    await act(async () => createRoot(container).render(<Popup client={client} />));
+    await act(async () => Promise.resolve());
+
+    const editor = container.querySelector('textarea[aria-label="System prompt"]') as HTMLTextAreaElement;
+    expect(container.querySelector('details.system-prompt')?.hasAttribute('open')).toBe(false);
+    expect(editor.value).toContain('Create a structured summary of this YouTube video.');
+    expect(editor.value).toContain('Write the summary in Russian.');
+    expect(editor.value).not.toContain('Transcript:');
+    expect(editor.value).not.toContain('[0:00]');
+    expect(container.textContent).toContain('The transcript is added automatically and is not shown while editing.');
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+      setter?.call(editor, 'Write a B1-B2 English summary for a Russian learner.');
+      editor.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    expect(client.saveSystemPrompt).toHaveBeenCalledWith('Write a B1-B2 English summary for a Russian learner.');
+    const chatGptButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'ChatGPT');
+    await act(async () => chatGptButton?.click());
+    expect(client.prepare).toHaveBeenCalledWith(
+      'chatgpt',
+      'ru',
+      page,
+      'ru',
+      'Write a B1-B2 English summary for a Russian learner.',
+    );
   });
 });

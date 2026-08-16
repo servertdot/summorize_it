@@ -33,6 +33,7 @@ export function registerYouTubeContent(): void {
           page,
           summaryLanguage: message.summaryLanguage,
           selectedTrackId: message.selectedTrackId,
+          systemPrompt: message.systemPrompt,
           fetchCaption: (track) => fetchCaptionXml(page.videoId, track, controller.signal),
         }),
         save: (prompt, destination) => handoff.save(prompt, destination),

@@ -20,6 +20,22 @@ describe('YouTube summary preparation', () => {
     expect(prepared.prompt).toContain('Transcript:');
   });
 
+  it('uses a custom system prompt and still appends the complete transcript', async () => {
+    const prepared = await prepareYouTubeSummary({
+      page: {
+        videoId: 'video', title: 'Title', url: 'https://www.youtube.com/watch?v=video', pageLanguage: 'en',
+        tracks: [{ id: 'en', languageCode: 'en', label: 'English', kind: 'manual', baseUrl: 'https://www.youtube.com/captions' }],
+      },
+      summaryLanguage: 'ru',
+      systemPrompt: 'Write a B1-B2 English summary for a Russian learner.',
+      fetchCaption: async () => '<text start="0">Complete transcript.</text>',
+    });
+
+    expect(prepared.prompt).toContain('Write a B1-B2 English summary for a Russian learner.');
+    expect(prepared.prompt).not.toContain('Write the summary in Russian.');
+    expect(prepared.prompt).toContain('Transcript:\n[0:00] Complete transcript.');
+  });
+
   it('uses the active caption track and preserves every caption in timestamped blocks', async () => {
     const fetchCaption = vi.fn().mockResolvedValue(`
       <transcript>

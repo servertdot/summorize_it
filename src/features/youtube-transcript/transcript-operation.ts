@@ -1,3 +1,9 @@
+import {
+  composePreparedPrompt,
+  resolveSystemPrompt,
+  sourceContentHeading,
+} from '@src/features/summary-services/summary-prompt';
+
 export type CaptionTrackKind = 'manual' | 'asr';
 
 export interface CaptionTrack {
@@ -49,25 +55,12 @@ interface PrepareYouTubeSummaryInput {
   page: YouTubePage;
   summaryLanguage: string;
   selectedTrackId?: string;
+  systemPrompt?: string;
   fetchCaption: (track: CaptionTrack) => Promise<string>;
 }
 
 const SENTENCE_END = /[.!?。！？]["'’”）』」)]*\s*$/;
 const MAX_BLOCK_SECONDS = 30;
-
-const SUMMARY_LANGUAGE_NAMES: Record<string, string> = {
-  de: 'German',
-  en: 'English',
-  es: 'Spanish',
-  fr: 'French',
-  it: 'Italian',
-  ja: 'Japanese',
-  ko: 'Korean',
-  pt: 'Portuguese',
-  ru: 'Russian',
-  uk: 'Ukrainian',
-  zh: 'Chinese',
-};
 
 export class TranscriptPreparationError extends Error {
   constructor(public readonly code: 'captions-not-found' | 'caption-fetch-failed') {
@@ -79,6 +72,7 @@ export async function prepareYouTubeSummary({
   page,
   summaryLanguage,
   selectedTrackId,
+  systemPrompt,
   fetchCaption,
 }: PrepareYouTubeSummaryInput): Promise<PreparedYouTubeSummary> {
   const track = selectCaptionTrack(page, selectedTrackId);
@@ -95,7 +89,7 @@ export async function prepareYouTubeSummary({
   const blocks = groupTranscriptSegments(segments);
   return {
     blocks,
-    prompt: composeSummaryPrompt(page, track, blocks, summaryLanguage),
+    prompt: composeSummaryPrompt(page, track, blocks, summaryLanguage, systemPrompt),
     track,
   };
 }
@@ -185,23 +179,17 @@ function composeSummaryPrompt(
   track: CaptionTrack,
   blocks: TranscriptBlock[],
   summaryLanguage: string,
+  systemPrompt?: string,
 ): string {
-  const languageCode = normalizeLanguage(summaryLanguage).split('-')[0];
-  const languageName = SUMMARY_LANGUAGE_NAMES[languageCode] ?? summaryLanguage;
   const transcript = blocks.map((block) => `[${formatTimestamp(block.start)}] ${block.text}`).join('\n\n');
-
-  return [
-    'Create a structured summary of this YouTube video.',
-    'Highlight the main points, important details, and conclusions. When referring to specific moments, use timestamps from the transcript.',
-    `Write the summary in ${languageName}.`,
-    '',
-    `Title: ${page.title}`,
-    `URL: ${page.url}`,
-    `Caption language: ${track.languageCode}`,
-    '',
-    'Transcript:',
-    transcript,
-  ].join('\n');
+  return composePreparedPrompt({
+    systemPrompt: resolveSystemPrompt('youtube', summaryLanguage, systemPrompt),
+    title: page.title,
+    url: page.url,
+    extraLines: [`Caption language: ${track.languageCode}`],
+    contentHeading: sourceContentHeading('youtube'),
+    content: transcript,
+  });
 }
 
 function normalizeLanguage(language: string): string {

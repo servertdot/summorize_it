@@ -2,9 +2,11 @@ import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf.mj
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 
 import {
-  summaryLanguageName,
-  type SummaryService,
-} from './summary-service';
+  composePreparedPrompt,
+  resolveSystemPrompt,
+  sourceContentHeading,
+} from './summary-prompt';
+import type { SummaryService } from './summary-service';
 import { createPdfPage, type PdfPage } from './pdf-page';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -14,10 +16,11 @@ export interface PdfSummaryInput {
   url: string;
   title?: string;
   summaryLanguage: string;
+  systemPrompt?: string;
 }
 
 export const pdfSummaryService: SummaryService<PdfSummaryInput> = {
-  async prepare({ data, url, title, summaryLanguage }) {
+  async prepare({ data, url, title, summaryLanguage, systemPrompt }) {
     if (!supportsPdfExtractionRuntime(globalThis)) {
       throw new Error('PDF extraction requires an extension page context');
     }
@@ -37,7 +40,7 @@ export const pdfSummaryService: SummaryService<PdfSummaryInput> = {
         if (pageText) pages.push(`[Page ${pageNumber}]\n${pageText}`);
       }
       if (pages.length === 0) throw new Error('This PDF does not contain extractable text');
-      return { source: page, prompt: composePdfSummaryPrompt(page, pages.join('\n\n'), summaryLanguage) };
+      return { source: page, prompt: composePdfSummaryPrompt(page, pages.join('\n\n'), summaryLanguage, systemPrompt) };
     } finally {
       await document.destroy();
     }
@@ -48,18 +51,14 @@ export function supportsPdfExtractionRuntime(scope: object): boolean {
   return 'window' in scope;
 }
 
-export function composePdfSummaryPrompt(page: PdfPage, content: string, summaryLanguage: string): string {
-  return [
-    'Create a structured summary of this PDF document.',
-    'Highlight the main points, important details, arguments, and conclusions. When referring to specific material, cite the page numbers included in the extracted text.',
-    `Write the summary in ${summaryLanguageName(summaryLanguage)}.`,
-    '',
-    `Title: ${page.title}`,
-    `URL: ${page.url}`,
-    '',
-    'Document content:',
+export function composePdfSummaryPrompt(page: PdfPage, content: string, summaryLanguage: string, systemPrompt?: string): string {
+  return composePreparedPrompt({
+    systemPrompt: resolveSystemPrompt('pdf', summaryLanguage, systemPrompt),
+    title: page.title,
+    url: page.url,
+    contentHeading: sourceContentHeading('pdf'),
     content,
-  ].join('\n');
+  });
 }
 
 function readMetadataTitle(info: unknown): string | undefined {

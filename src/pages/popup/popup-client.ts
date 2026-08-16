@@ -19,34 +19,36 @@ import type { PopupClient } from './Popup';
 export const browserPopupClient: PopupClient = {
   async load() {
     const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
-    const settings = await browser.storage.local.get(['summaryLanguage', 'selectedDestinations']);
+    const settings = await browser.storage.local.get(['summaryLanguage', 'selectedDestinations', 'systemPrompt']);
     const browserLanguage = supportedLanguage(browser.i18n.getUILanguage().split('-')[0]);
     const summaryLanguage = typeof settings.summaryLanguage === 'string' ? settings.summaryLanguage : browserLanguage;
+    const systemPrompt = typeof settings.systemPrompt === 'string' ? settings.systemPrompt : '';
     const selectedDestinations = readSelectedDestinations(settings.selectedDestinations);
     if (activeTab?.id && isAiUrl(activeTab.url)) {
       const tabOperation = await sendBackgroundMessage({ type: 'GET_TAB_OPERATION', tabId: activeTab.id });
-      if (tabOperation.operation) return { summaryLanguage, selectedDestinations, operation: tabOperation.operation };
+      if (tabOperation.operation) return { summaryLanguage, systemPrompt, selectedDestinations, operation: tabOperation.operation };
     }
 
     if (activeTab?.id && isSummarizableUrl(activeTab.url)) {
       const page = await getSummaryPage(activeTab.id, activeTab.url!, activeTab.title);
-      return { page, summaryLanguage, selectedDestinations };
+      return { page, summaryLanguage, systemPrompt, selectedDestinations };
     }
 
     const activeOperation = await sendBackgroundMessage({ type: 'GET_ACTIVE_OPERATION' });
-    if (activeOperation.operation) return { summaryLanguage, selectedDestinations, operation: activeOperation.operation };
+    if (activeOperation.operation) return { summaryLanguage, systemPrompt, selectedDestinations, operation: activeOperation.operation };
     throw new Error('Open a YouTube video, web page, or PDF');
   },
   async saveSummaryLanguage(summaryLanguage) { await browser.storage.local.set({ summaryLanguage }); },
+  async saveSystemPrompt(systemPrompt) { await browser.storage.local.set({ systemPrompt }); },
   async saveDestinations(selectedDestinations) { await browser.storage.local.set({ selectedDestinations }); },
-  async prepare(destination, summaryLanguage, page, selectedTrackId) {
+  async prepare(destination, summaryLanguage, page, selectedTrackId, systemPrompt) {
     const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
     if (!activeTab?.id) throw new Error('The source tab is unavailable');
     if ('type' in page && page.type === 'pdf') {
-      return preparePdfSummary(destination, summaryLanguage, page);
+      return preparePdfSummary(destination, summaryLanguage, page, systemPrompt);
     }
     const request = {
-      type: 'START_SUMMARY', destination, summaryLanguage, selectedTrackId,
+      type: 'START_SUMMARY', destination, summaryLanguage, selectedTrackId, systemPrompt,
     } satisfies SummaryContentRequest;
     const response: unknown = await browser.tabs.sendMessage(activeTab.id, request);
     if (!isOperationResponse(response)) throw new Error('Invalid response from the page adapter');
@@ -89,6 +91,7 @@ async function preparePdfSummary(
   destination: AiDestination,
   summaryLanguage: string,
   page: PdfPage,
+  systemPrompt?: string,
 ): Promise<SummaryOperationState> {
   const handoff = new LargePayloadStore(browserLocalStorage);
   let storedOperationId: string | undefined;
@@ -104,7 +107,7 @@ async function preparePdfSummary(
     const { pdfSummaryService } = await import('@src/features/summary-services/pdf-summary-service');
     const result = await startSummaryOperation({
       destination,
-      prepare: () => pdfSummaryService.prepare({ data, url: page.url, title: page.title, summaryLanguage }),
+      prepare: () => pdfSummaryService.prepare({ data, url: page.url, title: page.title, summaryLanguage, systemPrompt }),
       save: (prompt, target) => handoff.save(prompt, target),
     });
     storedOperationId = result.operationId;

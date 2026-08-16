@@ -1,10 +1,11 @@
 import { Readability } from '@mozilla/readability';
 
 import {
-  summaryLanguageName,
-  type SummaryService,
-  type SummarySource,
-} from './summary-service';
+  composePreparedPrompt,
+  resolveSystemPrompt,
+  sourceContentHeading,
+} from './summary-prompt';
+import type { SummaryService, SummarySource } from './summary-service';
 
 export interface HtmlPage extends SummarySource {
   type: 'html';
@@ -14,10 +15,11 @@ export interface HtmlSummaryInput {
   document: Document;
   url: string;
   summaryLanguage: string;
+  systemPrompt?: string;
 }
 
 export const htmlSummaryService: SummaryService<HtmlSummaryInput> = {
-  async prepare({ document, url, summaryLanguage }) {
+  async prepare({ document, url, summaryLanguage, systemPrompt }) {
     const page = readHtmlPage(document, url);
     const article = new Readability(document.cloneNode(true) as Document).parse();
     const content = normalizeText(article?.textContent || fallbackPageText(document));
@@ -25,7 +27,7 @@ export const htmlSummaryService: SummaryService<HtmlSummaryInput> = {
 
     return {
       source: page,
-      prompt: composeHtmlSummaryPrompt(page, content, summaryLanguage, article?.byline),
+      prompt: composeHtmlSummaryPrompt(page, content, summaryLanguage, article?.byline, systemPrompt),
     };
   },
 };
@@ -43,19 +45,16 @@ export function composeHtmlSummaryPrompt(
   content: string,
   summaryLanguage: string,
   byline?: string | null,
+  systemPrompt?: string,
 ): string {
-  return [
-    'Create a structured summary of this web page.',
-    'Highlight the main points, important details, arguments, and conclusions. Preserve important names and numbers mentioned in the text.',
-    `Write the summary in ${summaryLanguageName(summaryLanguage)}.`,
-    '',
-    `Title: ${page.title}`,
-    `URL: ${page.url}`,
-    ...(byline?.trim() ? [`Author: ${byline.trim()}`] : []),
-    '',
-    'Page content:',
+  return composePreparedPrompt({
+    systemPrompt: resolveSystemPrompt('html', summaryLanguage, systemPrompt),
+    title: page.title,
+    url: page.url,
+    extraLines: byline?.trim() ? [`Author: ${byline.trim()}`] : undefined,
+    contentHeading: sourceContentHeading('html'),
     content,
-  ].join('\n');
+  });
 }
 
 function fallbackPageText(document: Document): string {

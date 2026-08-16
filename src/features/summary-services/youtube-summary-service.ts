@@ -10,6 +10,7 @@ export interface YouTubeSummaryInput {
   page: YouTubePage;
   summaryLanguage: string;
   selectedTrackId?: string;
+  systemPrompt?: string;
   fetchCaption: (track: CaptionTrack) => Promise<string>;
 }
 
