@@ -18,9 +18,16 @@ const page = {
 
 function makeClient(overrides: Partial<PopupClient> = {}): PopupClient {
   return {
-    load: vi.fn().mockResolvedValue({ page, summaryLanguage: 'ru', systemPrompt: '', selectedDestinations: ['chatgpt', 'perplexity'] }),
+    load: vi.fn().mockResolvedValue({
+      page,
+      summaryLanguage: 'ru',
+      systemPrompt: '',
+      systemPromptEnabled: true,
+      selectedDestinations: ['chatgpt', 'perplexity'],
+    }),
     saveSummaryLanguage: vi.fn().mockResolvedValue(undefined),
     saveSystemPrompt: vi.fn().mockResolvedValue(undefined),
+    saveSystemPromptEnabled: vi.fn().mockResolvedValue(undefined),
     saveDestinations: vi.fn().mockResolvedValue(undefined),
     prepare: vi.fn().mockResolvedValue({
       id: 'id', destination: 'chatgpt',
@@ -86,7 +93,7 @@ describe('popup', () => {
   it('shows an immediate error when the video has no caption tracks', async () => {
     const client = makeClient({
       load: vi.fn().mockResolvedValue({
-        page: { ...page, tracks: [] }, summaryLanguage: 'ru', systemPrompt: '', selectedDestinations: ['chatgpt', 'perplexity'],
+        page: { ...page, tracks: [] }, summaryLanguage: 'ru', systemPrompt: '', systemPromptEnabled: true, selectedDestinations: ['chatgpt', 'perplexity'],
       }),
     });
     const container = document.createElement('div');
@@ -103,7 +110,7 @@ describe('popup', () => {
     const htmlPage = { type: 'html' as const, id: 'https://example.com/article', title: 'Article', url: 'https://example.com/article' };
     const client = makeClient({
       load: vi.fn().mockResolvedValue({
-        page: htmlPage, summaryLanguage: 'en', systemPrompt: '', selectedDestinations: ['chatgpt'],
+        page: htmlPage, summaryLanguage: 'en', systemPrompt: '', systemPromptEnabled: true, selectedDestinations: ['chatgpt'],
       }),
     });
     const container = document.createElement('div');
@@ -154,7 +161,7 @@ describe('popup', () => {
     };
     const client = makeClient({
       load: vi.fn().mockResolvedValue({
-        summaryLanguage: 'ru', systemPrompt: '', selectedDestinations: ['chatgpt', 'perplexity'], operation,
+        summaryLanguage: 'ru', systemPrompt: '', systemPromptEnabled: true, selectedDestinations: ['chatgpt', 'perplexity'], operation,
       }),
       retry: vi.fn().mockRejectedValue(new Error('retry failed')),
       copy: vi.fn().mockResolvedValue(undefined),
@@ -186,8 +193,8 @@ describe('popup', () => {
 
     const editor = container.querySelector('textarea[aria-label="System prompt"]') as HTMLTextAreaElement;
     expect(container.querySelector('details.system-prompt')?.hasAttribute('open')).toBe(false);
-    expect(editor.value).toContain('Create a structured summary of this YouTube video.');
-    expect(editor.value).toContain('Write the summary in Russian.');
+    expect(editor.value).toContain('Сделай структурированную суммаризацию этого YouTube-видео.');
+    expect(editor.value).toContain('Язык ответа: русский');
     expect(editor.value).not.toContain('Transcript:');
     expect(editor.value).not.toContain('[0:00]');
     expect(container.textContent).toContain('The transcript is added automatically and is not shown while editing.');
@@ -208,6 +215,36 @@ describe('popup', () => {
       'ru',
       'Write a B1-B2 English summary for a Russian learner.',
     );
+  });
+
+  it('disables the custom system prompt and uses the built-in prompt', async () => {
+    const client = makeClient({
+      load: vi.fn().mockResolvedValue({
+        page,
+        summaryLanguage: 'ru',
+        systemPrompt: 'Custom instructions',
+        systemPromptEnabled: true,
+        selectedDestinations: ['chatgpt'],
+      }),
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    await act(async () => createRoot(container).render(<Popup client={client} />));
+    await act(async () => Promise.resolve());
+
+    const toggle = container.querySelector('input[aria-label="Use custom system prompt"]') as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+    await act(async () => {
+      toggle.click();
+      await Promise.resolve();
+    });
+    expect(client.saveSystemPromptEnabled).toHaveBeenCalledWith(false);
+    const editor = container.querySelector('textarea[aria-label="System prompt"]') as HTMLTextAreaElement;
+    expect(editor.disabled).toBe(true);
+    expect(editor.value).toBe('Custom instructions');
+    const chatGptButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'ChatGPT');
+    await act(async () => chatGptButton?.click());
+    expect(client.prepare).toHaveBeenCalledWith('chatgpt', 'ru', page, 'ru', undefined);
   });
 
   it('makes language and caption selects cover their full menu rows', async () => {

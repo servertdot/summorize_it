@@ -19,27 +19,29 @@ import type { PopupClient } from './Popup';
 export const browserPopupClient: PopupClient = {
   async load() {
     const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
-    const settings = await browser.storage.local.get(['summaryLanguage', 'selectedDestinations', 'systemPrompt']);
+    const settings = await browser.storage.local.get(['summaryLanguage', 'selectedDestinations', 'systemPrompt', 'systemPromptEnabled']);
     const browserLanguage = supportedLanguage(browser.i18n.getUILanguage().split('-')[0]);
     const summaryLanguage = typeof settings.summaryLanguage === 'string' ? settings.summaryLanguage : browserLanguage;
     const systemPrompt = typeof settings.systemPrompt === 'string' ? settings.systemPrompt : '';
+    const systemPromptEnabled = typeof settings.systemPromptEnabled === 'boolean' ? settings.systemPromptEnabled : true;
     const selectedDestinations = readSelectedDestinations(settings.selectedDestinations);
     if (activeTab?.id && isAiUrl(activeTab.url)) {
       const tabOperation = await sendBackgroundMessage({ type: 'GET_TAB_OPERATION', tabId: activeTab.id });
-      if (tabOperation.operation) return { summaryLanguage, systemPrompt, selectedDestinations, operation: tabOperation.operation };
+      if (tabOperation.operation) return { summaryLanguage, systemPrompt, systemPromptEnabled, selectedDestinations, operation: tabOperation.operation };
     }
 
     if (activeTab?.id && isSummarizableUrl(activeTab.url)) {
       const page = await getSummaryPage(activeTab.id, activeTab.url!, activeTab.title);
-      return { page, summaryLanguage, systemPrompt, selectedDestinations };
+      return { page, summaryLanguage, systemPrompt, systemPromptEnabled, selectedDestinations };
     }
 
     const activeOperation = await sendBackgroundMessage({ type: 'GET_ACTIVE_OPERATION' });
-    if (activeOperation.operation) return { summaryLanguage, systemPrompt, selectedDestinations, operation: activeOperation.operation };
+    if (activeOperation.operation) return { summaryLanguage, systemPrompt, systemPromptEnabled, selectedDestinations, operation: activeOperation.operation };
     throw new Error('Open a YouTube video, web page, or PDF');
   },
   async saveSummaryLanguage(summaryLanguage) { await browser.storage.local.set({ summaryLanguage }); },
   async saveSystemPrompt(systemPrompt) { await browser.storage.local.set({ systemPrompt }); },
+  async saveSystemPromptEnabled(systemPromptEnabled) { await browser.storage.local.set({ systemPromptEnabled }); },
   async saveDestinations(selectedDestinations) { await browser.storage.local.set({ selectedDestinations }); },
   async prepare(destination, summaryLanguage, page, selectedTrackId, systemPrompt) {
     const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });

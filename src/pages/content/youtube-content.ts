@@ -27,6 +27,7 @@ export function registerYouTubeContent(): void {
     activeExtraction = controller;
     try {
       const page = getCurrentYouTubePage();
+      const bridge = requestYouTubeSnapshot();
       const result = await startSummaryOperation({
         destination: message.destination,
         prepare: () => youtubeSummaryService.prepare({
@@ -34,7 +35,7 @@ export function registerYouTubeContent(): void {
           summaryLanguage: message.summaryLanguage,
           selectedTrackId: message.selectedTrackId,
           systemPrompt: message.systemPrompt,
-          fetchCaption: (track) => fetchCaptionXml(page.videoId, track, controller.signal),
+          fetchCaption: (track) => fetchCaptionXml(page.videoId, track, controller.signal, bridge),
         }),
         save: (prompt, destination) => handoff.save(prompt, destination),
       });
@@ -79,8 +80,19 @@ function requestYouTubeSnapshot(): YouTubeBridgeSnapshot {
   try { return JSON.parse(serialized) as YouTubeBridgeSnapshot; } catch { return {}; }
 }
 
-function fetchCaptionXml(videoId: string, track: CaptionTrack, signal: AbortSignal): Promise<string> {
-  return fetchCaptionTrackXml({ videoId, track, signal });
+function fetchCaptionXml(
+  videoId: string,
+  track: CaptionTrack,
+  signal: AbortSignal,
+  bridge: YouTubeBridgeSnapshot,
+): Promise<string> {
+  return fetchCaptionTrackXml({
+    videoId,
+    track,
+    signal,
+    innertubeApiKey: bridge.innertubeApiKey,
+    innertubeContext: bridge.innertubeContext,
+  });
 }
 
 function errorMessage(cause: unknown): string {

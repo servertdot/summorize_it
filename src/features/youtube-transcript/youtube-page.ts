@@ -26,6 +26,8 @@ export interface YouTubeBridgeSnapshot {
   title?: string;
   activeCaption?: { vssId?: string; languageCode?: string };
   playerResponse?: PlayerResponse;
+  innertubeApiKey?: string;
+  innertubeContext?: unknown;
 }
 
 export function readYouTubePage(
@@ -43,6 +45,15 @@ export function readYouTubePage(
     : undefined;
   const rawTracks = response?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
   const tracks = rawTracks.flatMap(toCaptionTrack);
+  if (tracks.length === 0) {
+    tracks.push({
+      id: 'modern-transcript',
+      languageCode: normalizeLanguage(document.documentElement.lang || navigator.language || 'en'),
+      label: 'YouTube transcript',
+      kind: 'manual',
+      baseUrl: 'youtube-panel:',
+    });
+  }
   const activeTrackId = findActiveTrackId(tracks, rawTracks, bridge.activeCaption);
   const metadataTitle = document.querySelector('meta[property="og:title"]')?.getAttribute('content')?.trim();
   const title = response?.videoDetails?.title?.trim() || bridge.title?.trim() || metadataTitle || document.title;

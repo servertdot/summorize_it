@@ -221,6 +221,21 @@ h1 {
   transform: rotate(90deg);
 }
 
+.system-prompt-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 10px 4px 36px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+  cursor: pointer;
+}
+.system-prompt-toggle input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .system-prompt-editor {
   display: grid;
   min-width: 0;

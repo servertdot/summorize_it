@@ -10,7 +10,7 @@ import {
 describe('summary prompt', () => {
   it('keeps source-specific default instructions without the inserted content', () => {
     expect(defaultSystemPrompt('youtube', 'en')).toContain('YouTube video');
-    expect(defaultSystemPrompt('youtube', 'ru')).toContain('Write the summary in Russian.');
+    expect(defaultSystemPrompt('youtube', 'ru')).toContain('Язык ответа: русский');
     expect(defaultSystemPrompt('youtube', 'en')).not.toContain('Transcript:');
     expect(defaultSystemPrompt('html', 'en')).not.toContain('Page content:');
   });

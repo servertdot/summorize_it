@@ -16,7 +16,7 @@ describe('YouTube summary preparation', () => {
     });
 
     expect(prepared.prompt).toContain('Create a structured summary of this YouTube video.');
-    expect(prepared.prompt).toContain('Write the summary in English.');
+    expect(prepared.prompt).toContain('Response language: English');
     expect(prepared.prompt).toContain('Transcript:');
   });
 
@@ -87,7 +87,7 @@ describe('YouTube summary preparation', () => {
       },
       { start: 39, text: 'Now we move to the second idea.' },
     ]);
-    expect(result.prompt).toContain('Write the summary in Russian.');
+    expect(result.prompt).toContain('Язык ответа: русский');
     expect(result.prompt).toContain('Title: Resilient systems');
     expect(result.prompt).toContain('[0:00] Hello & welcome.');
     expect(result.prompt).toContain('[0:04] This video explains resilient systems without losing the important details.');

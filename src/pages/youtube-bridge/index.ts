@@ -7,12 +7,17 @@ interface YouTubePlayer {
   getVideoData?: () => { video_id?: string; title?: string };
 }
 
+interface YouTubeConfig {
+  get?: (key: string) => unknown;
+}
+
 window.addEventListener(REQUEST_EVENT, () => {
   const player = document.querySelector<HTMLElement>('#movie_player') as HTMLElement & YouTubePlayer | null;
   const videoData = player?.getVideoData?.();
   const rawResponse = player?.getPlayerResponse?.() as Record<string, unknown> | undefined
     ?? (window as Window & { ytInitialPlayerResponse?: Record<string, unknown> }).ytInitialPlayerResponse;
   const rawActiveCaption = player?.getOption?.('captions', 'track') as { vssId?: string; languageCode?: string } | undefined;
+  const config = (window as Window & { ytcfg?: YouTubeConfig }).ytcfg;
   const snapshot = {
     videoId: videoData?.video_id,
     title: videoData?.title,
@@ -21,6 +26,8 @@ window.addEventListener(REQUEST_EVENT, () => {
       languageCode: rawActiveCaption.languageCode,
     } : undefined,
     playerResponse: minimizePlayerResponse(rawResponse),
+    innertubeApiKey: config?.get?.('INNERTUBE_API_KEY'),
+    innertubeContext: config?.get?.('INNERTUBE_CONTEXT'),
   };
   document.documentElement.setAttribute(RESPONSE_ATTRIBUTE, JSON.stringify(snapshot));
   window.dispatchEvent(new CustomEvent(`${REQUEST_EVENT}:ready`));

@@ -13,6 +13,7 @@ interface PopupState {
   page?: SummaryPage;
   summaryLanguage: string;
   systemPrompt: string;
+  systemPromptEnabled: boolean;
   selectedDestinations: AiDestination[];
   operation?: SummaryOperationState;
 }
@@ -21,6 +22,7 @@ export interface PopupClient {
   load(): Promise<PopupState>;
   saveSummaryLanguage(language: string): Promise<void>;
   saveSystemPrompt(systemPrompt: string): Promise<void>;
+  saveSystemPromptEnabled(enabled: boolean): Promise<void>;
   saveDestinations(destinations: AiDestination[]): Promise<void>;
   prepare(destination: AiDestination, summaryLanguage: string, page: SummaryPage, selectedTrackId?: string, systemPrompt?: string): Promise<SummaryOperationState>;
   open(operationId: string, destination: AiDestination): Promise<SummaryOperationState>;
@@ -93,6 +95,12 @@ export default function Popup({ client }: { client: PopupClient }) {
     await client.saveSystemPrompt(systemPrompt);
   };
 
+  const toggleSystemPrompt = async (enabled: boolean) => {
+    if (!state) return;
+    setState({ ...state, systemPromptEnabled: enabled });
+    await client.saveSystemPromptEnabled(enabled);
+  };
+
   const resetSystemPrompt = async () => {
     if (!state) return;
     setState({ ...state, systemPrompt: '' });
@@ -117,7 +125,13 @@ export default function Popup({ client }: { client: PopupClient }) {
     setError(undefined);
     setStatus(preparationMessage(state.page));
     try {
-      const prepared = await client.prepare(destination, state.summaryLanguage, state.page, selectedTrackId, state.systemPrompt || undefined);
+      const prepared = await client.prepare(
+        destination,
+        state.summaryLanguage,
+        state.page,
+        selectedTrackId,
+        state.systemPromptEnabled ? state.systemPrompt || undefined : undefined,
+      );
       setState({ ...state, operation: prepared });
       setStatus(sizeMessage(prepared));
       await nextPaint();
@@ -204,8 +218,10 @@ export default function Popup({ client }: { client: PopupClient }) {
               page={state.page}
               summaryLanguage={state.summaryLanguage}
               systemPrompt={state.systemPrompt}
+              systemPromptEnabled={state.systemPromptEnabled}
               disabled={busy}
               onChange={(value) => void changeSystemPrompt(value)}
+              onToggle={(enabled) => void toggleSystemPrompt(enabled)}
               onReset={() => void resetSystemPrompt()}
             />
             {youtubePage && youtubePage.tracks.length > 1 && (
@@ -275,8 +291,15 @@ export default function Popup({ client }: { client: PopupClient }) {
   );
 }
 
-function SystemPromptEditor({ page, summaryLanguage, systemPrompt, disabled, onChange, onReset }: {
-  page: SummaryPage; summaryLanguage: string; systemPrompt: string; disabled: boolean; onChange: (value: string) => void; onReset: () => void;
+function SystemPromptEditor({ page, summaryLanguage, systemPrompt, systemPromptEnabled, disabled, onChange, onToggle, onReset }: {
+  page: SummaryPage;
+  summaryLanguage: string;
+  systemPrompt: string;
+  systemPromptEnabled: boolean;
+  disabled: boolean;
+  onChange: (value: string) => void;
+  onToggle: (enabled: boolean) => void;
+  onReset: () => void;
 }) {
   const sourceType = summaryPageType(page);
   const defaultPrompt = defaultSystemPrompt(sourceType, summaryLanguage);
@@ -289,18 +312,31 @@ function SystemPromptEditor({ page, summaryLanguage, systemPrompt, disabled, onC
         <span className="row-copy">
           <span className="row-title">System prompt</span>
         </span>
-        {isCustom && <span className="row-meta">Custom</span>}
+        <span className="row-meta">{systemPromptEnabled ? (isCustom ? 'Custom' : 'Default') : 'Off'}</span>
         <span className="row-chevron" aria-hidden="true"><Icon name="chevron" /></span>
       </summary>
+      <label className="system-prompt-toggle">
+        <input
+          type="checkbox"
+          aria-label="Use custom system prompt"
+          checked={systemPromptEnabled}
+          disabled={disabled}
+          onChange={(event) => onToggle(event.target.checked)}
+        />
+        Use custom system prompt
+      </label>
       <div className="system-prompt-editor">
         <textarea
           aria-label="System prompt"
           value={editorValue}
-          disabled={disabled}
-          rows={6}
+          disabled={disabled || !systemPromptEnabled}
           onChange={(event) => onChange(event.target.value)}
         />
-        <div className="system-prompt-source">{sourceContentInsertionHint(sourceType)}</div>
+        <div className="system-prompt-source">
+          {systemPromptEnabled
+            ? sourceContentInsertionHint(sourceType)
+            : 'Disabled. The built-in summary prompt will be used.'}
+        </div>
       </div>
       {isCustom && <button type="button" className="text-action" disabled={disabled} onClick={onReset}>Reset to default</button>}
     </details>

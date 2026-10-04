@@ -115,8 +115,13 @@ export async function fetchCaptionTrackXml(options: {
   track: CaptionTrack;
   fetchImpl?: CaptionFetch;
   signal?: AbortSignal;
+  innertubeApiKey?: string;
+  innertubeContext?: unknown;
 }): Promise<string> {
   const fetchImpl = options.fetchImpl ?? fetch;
+  if (options.track.baseUrl === 'youtube-panel:') {
+    return fetchModernTranscript(options.videoId, fetchImpl, options.signal, options.innertubeApiKey, options.innertubeContext);
+  }
   const primaryUrl = await resolveCaptionFetchUrl(
     options.videoId,
     options.track,
@@ -136,7 +141,88 @@ export async function fetchCaptionTrackXml(options: {
     }
   }
 
+  try {
+    return await fetchModernTranscript(
+      options.videoId,
+      fetchImpl,
+      options.signal,
+      options.innertubeApiKey,
+      options.innertubeContext,
+    );
+  } catch {
+    // Keep the caption retrieval error stable if YouTube's panel API is unavailable.
+  }
+
   throw new Error('Could not retrieve captions');
+}
+
+export async function fetchModernTranscript(
+  videoId: string,
+  fetchImpl: CaptionFetch = fetch,
+  signal?: AbortSignal,
+  apiKey = INNERTUBE_API_KEY,
+  context?: unknown,
+): Promise<string> {
+  const response = await fetchImpl(
+    `https://www.youtube.com/youtubei/v1/get_panel?key=${encodeURIComponent(apiKey)}&prettyPrint=false`,
+    {
+      method: 'POST',
+      signal,
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        context: context ?? { client: { clientName: 'WEB', clientVersion: '2.20260924.00.00', hl: 'en' } },
+        panelId: 'PAmodern_transcript_view',
+        params: modernTranscriptParams(videoId),
+      }),
+    },
+  );
+  if (!response.ok) throw new Error('Could not retrieve captions');
+  const data = await response.json() as unknown;
+  const segments = readModernTranscriptSegments(data);
+  if (segments.length === 0) throw new Error('Could not retrieve captions');
+  return segments.map(({ start, text }) => `<text start="${start}">${escapeXml(text)}</text>`).join('');
+}
+
+function modernTranscriptParams(videoId: string): string {
+  if (!/^[\w-]{11}$/.test(videoId)) throw new Error('Invalid YouTube video ID');
+  // This is the compact protobuf used by YouTube's modern transcript panel.
+  const bytes = Uint8Array.from([0xaa, 0x09, 0x0f, 0x0a, 0x0b, ...new TextEncoder().encode(videoId), 0x18, 0x02]);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function readModernTranscriptSegments(value: unknown): Array<{ start: number; text: string }> {
+  const result: Array<{ start: number; text: string }> = [];
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    const object = node as Record<string, unknown>;
+    const segment = object.transcriptSegmentViewModel;
+    if (segment && typeof segment === 'object') {
+      const item = segment as Record<string, unknown>;
+      const timestamp = typeof item.timestamp === 'string' ? parseTranscriptTimestamp(item.timestamp) : undefined;
+      const text = typeof item.simpleText === 'string' ? item.simpleText.trim() : '';
+      if (timestamp !== undefined && text) result.push({ start: timestamp, text });
+    }
+    Object.values(object).forEach(visit);
+  };
+  visit(value);
+  return result;
+}
+
+function parseTranscriptTimestamp(value: string): number | undefined {
+  const parts = value.split(':').map(Number);
+  if (parts.length < 2 || parts.length > 3 || parts.some((part) => !Number.isFinite(part))) return undefined;
+  return parts.reduce((total, part) => total * 60 + part, 0);
+}
+
+function escapeXml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 async function readCaptionBody(
