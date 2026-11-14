@@ -29,6 +29,7 @@ function makeClient(overrides: Partial<PopupClient> = {}): PopupClient {
     saveSystemPrompt: vi.fn().mockResolvedValue(undefined),
     saveSystemPromptEnabled: vi.fn().mockResolvedValue(undefined),
     saveDestinations: vi.fn().mockResolvedValue(undefined),
+    estimatePromptSize: vi.fn().mockResolvedValue({ charLength: 12_400, estimatedTokens: 3_100 }),
     prepare: vi.fn().mockResolvedValue({
       id: 'id', destination: 'chatgpt',
       source: { type: 'youtube', id: 'video', title: 'Video title', url: page.url }, variantId: 'ru',
@@ -69,8 +70,7 @@ describe('popup', () => {
     expect(client.prepare).toHaveBeenCalledWith('chatgpt', 'ru', page, 'ru', undefined);
   });
 
-  it('persists chosen services and renders them as summary buttons', async () => {
-    const client = makeClient();
+  it('persists chosen services and renders them as summary buttons', async () => {    const client = makeClient();
     const container = document.createElement('div');
     document.body.appendChild(container);
 
@@ -144,12 +144,52 @@ describe('popup', () => {
     const perplexity = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Perplexity');
     await act(async () => perplexity?.click());
 
-    expect(container.textContent).toContain('200,000 tokens');
+    expect(container.textContent).toContain('200k tok');
+    expect(container.textContent).toContain('Very large prompt');
     expect(container.textContent).toContain('Opening Perplexity');
     expect(client.open).not.toHaveBeenCalled();
     await act(async () => { vi.advanceTimersByTime(700); await Promise.resolve(); });
     expect(client.open).toHaveBeenCalledWith('large', 'perplexity');
     vi.useRealTimers();
+  });
+
+  it('shows an estimated prompt size in the footer while ready', async () => {
+    const client = makeClient();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    await act(async () => createRoot(container).render(<Popup client={client} />));
+    await act(async () => Promise.resolve());
+    await act(async () => Promise.resolve());
+
+    const footer = container.querySelector('footer');
+    expect(footer?.textContent).toContain('Ready to summarize');
+    expect(footer?.textContent).toContain('12.4k chars · ≈3,100 tok');
+    expect(client.estimatePromptSize).toHaveBeenCalledWith('ru', page, 'ru', undefined);
+  });
+
+  it('shows prompt size in the footer status while an operation is active', async () => {
+    const operation = {
+      id: 'sized', destination: 'chatgpt' as const,
+      source: { type: 'youtube' as const, id: 'video', title: 'Video title', url: page.url }, variantId: 'ru',
+      charLength: 12_400, estimatedTokens: 3_100, createdAt: 1, expiresAt: 2,
+      status: 'opening' as const, statusMessage: 'Opening…',
+    };
+    const client = makeClient({
+      load: vi.fn().mockResolvedValue({
+        summaryLanguage: 'ru', systemPrompt: '', systemPromptEnabled: true, selectedDestinations: ['chatgpt'], operation,
+      }),
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    await act(async () => createRoot(container).render(<Popup client={client} />));
+    await act(async () => Promise.resolve());
+
+    const footer = container.querySelector('footer');
+    expect(footer?.textContent).toContain('Opening…');
+    expect(footer?.textContent).toContain('12.4k chars · ≈3,100 tok');
+    expect(footer?.querySelector('.status-size')?.getAttribute('title')).toBe(
+      '12,400 characters · ≈3,100 tokens',
+    );
   });
 
   it('offers retry, copy, and cancel for a recoverable operation', async () => {

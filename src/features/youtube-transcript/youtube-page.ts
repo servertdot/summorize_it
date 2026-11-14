@@ -45,7 +45,10 @@ export function readYouTubePage(
     : undefined;
   const rawTracks = response?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
   const tracks = rawTracks.flatMap(toCaptionTrack);
-  if (tracks.length === 0) {
+  const accessError = accessErrorFrom(response?.playabilityStatus);
+  // WEB playerResponse often omits captionTracks; keep a panel placeholder so fetch
+  // can fall through ANDROID/IOS timedtext and get_panel. Never invent tracks for blocked videos.
+  if (tracks.length === 0 && !accessError) {
     tracks.push({
       id: 'modern-transcript',
       languageCode: normalizeLanguage(document.documentElement.lang || navigator.language || 'en'),
@@ -57,7 +60,6 @@ export function readYouTubePage(
   const activeTrackId = findActiveTrackId(tracks, rawTracks, bridge.activeCaption);
   const metadataTitle = document.querySelector('meta[property="og:title"]')?.getAttribute('content')?.trim();
   const title = response?.videoDetails?.title?.trim() || bridge.title?.trim() || metadataTitle || document.title;
-  const accessError = accessErrorFrom(response?.playabilityStatus);
 
   return {
     videoId,

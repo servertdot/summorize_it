@@ -5,12 +5,22 @@ import { htmlSummaryService, readHtmlPage } from '@src/features/summary-services
 import { startSummaryOperation } from '@src/features/summary-operation/start-summary-operation';
 import { sendBackgroundMessage } from '@src/platform/background-messaging';
 import { browserLocalStorage } from '@src/platform/browser-storage';
-import { isSummaryContentRequest } from '@src/shared/messages';
+import { isSummaryContentRequest, type PromptSizeResponse } from '@src/shared/messages';
+import { estimateTokensFromChars } from '@src/shared/operation-policy';
 
 export function registerHtmlContent(): void {
-  browser.runtime.onMessage.addListener(async (message: unknown) => {
+  browser.runtime.onMessage.addListener((message: unknown) => {
     if (!isSummaryContentRequest(message)) return undefined;
+    if (location.hostname === 'www.youtube.com' && location.pathname === '/watch') return undefined;
+    return handleMessage(message);
+  });
+}
+
+async function handleMessage(message: import('@src/shared/messages').SummaryContentRequest) {
     if (message.type === 'GET_SUMMARY_PAGE') return readHtmlPage(document, location.href);
+    if (message.type === 'ESTIMATE_PROMPT_SIZE') {
+      return estimatePromptSize(message.summaryLanguage, message.systemPrompt);
+    }
 
     const handoff = new LargePayloadStore(browserLocalStorage);
     let storedOperationId: string | undefined;
@@ -34,7 +44,27 @@ export function registerHtmlContent(): void {
       if (storedOperationId) await handoff.cancel(storedOperationId);
       return { ok: false, error: errorMessage(cause) };
     }
-  });
+}
+
+async function estimatePromptSize(
+  summaryLanguage: string,
+  systemPrompt?: string,
+): Promise<PromptSizeResponse> {
+  try {
+    const prepared = await htmlSummaryService.prepare({
+      document,
+      url: location.href,
+      summaryLanguage,
+      systemPrompt,
+    });
+    return {
+      ok: true,
+      charLength: prepared.prompt.length,
+      estimatedTokens: estimateTokensFromChars(prepared.prompt.length),
+    };
+  } catch (cause) {
+    return { ok: false, error: errorMessage(cause) };
+  }
 }
 
 function errorMessage(cause: unknown): string {

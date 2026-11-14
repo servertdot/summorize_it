@@ -12,7 +12,20 @@ import {
 
 export type SummaryContentRequest =
   | { type: 'GET_SUMMARY_PAGE' }
+  | { type: 'ESTIMATE_PROMPT_SIZE'; summaryLanguage: string; selectedTrackId?: string; systemPrompt?: string }
   | { type: 'START_SUMMARY'; destination: AiDestination; summaryLanguage: string; selectedTrackId?: string; systemPrompt?: string };
+
+export interface PromptSizeEstimate {
+  charLength: number;
+  estimatedTokens: number;
+}
+
+export interface PromptSizeResponse {
+  ok: boolean;
+  charLength?: number;
+  estimatedTokens?: number;
+  error?: string;
+}
 
 export type BackgroundRequest =
   | { type: 'REGISTER_OPERATION'; operation: StartedSummaryOperation }
@@ -60,11 +73,23 @@ export function isOperationResponse(value: unknown): value is OperationResponse 
 export function isSummaryContentRequest(value: unknown): value is SummaryContentRequest {
   if (!isRecord(value) || typeof value.type !== 'string') return false;
   if (value.type === 'GET_SUMMARY_PAGE') return true;
+  if (value.type === 'ESTIMATE_PROMPT_SIZE') {
+    return typeof value.summaryLanguage === 'string'
+      && (value.selectedTrackId === undefined || typeof value.selectedTrackId === 'string')
+      && (value.systemPrompt === undefined || typeof value.systemPrompt === 'string');
+  }
   return value.type === 'START_SUMMARY'
     && isAiDestination(value.destination)
     && typeof value.summaryLanguage === 'string'
     && (value.selectedTrackId === undefined || typeof value.selectedTrackId === 'string')
     && (value.systemPrompt === undefined || typeof value.systemPrompt === 'string');
+}
+
+export function isPromptSizeResponse(value: unknown): value is PromptSizeResponse {
+  if (!isRecord(value) || typeof value.ok !== 'boolean') return false;
+  return (value.charLength === undefined || typeof value.charLength === 'number')
+    && (value.estimatedTokens === undefined || typeof value.estimatedTokens === 'number')
+    && (value.error === undefined || typeof value.error === 'string');
 }
 
 export function isBackgroundRequest(value: unknown): value is BackgroundRequest {

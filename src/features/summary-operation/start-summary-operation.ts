@@ -1,5 +1,6 @@
 import type { AiDestination, StoredOperation } from '@src/features/handoff/large-payload';
 import type { PreparedSourceSummary, SummarySource } from '@src/features/summary-services/summary-service';
+import { estimateTokensFromChars } from '@src/shared/operation-policy';
 
 interface StartSummaryOperationInput {
   destination: AiDestination;
@@ -30,7 +31,7 @@ export async function startSummaryOperation({
     source: prepared.source,
     variantId: prepared.variantId,
     charLength: prepared.prompt.length,
-    estimatedTokens: Math.ceil(prepared.prompt.length / 4),
+    estimatedTokens: estimateTokensFromChars(prepared.prompt.length),
     expiresAt: operation.expiresAt,
   };
 }

@@ -5,6 +5,7 @@ import { canCancelOperation } from '@src/features/summary-operation/operation-co
 import { defaultSystemPrompt, sourceContentInsertionHint } from '@src/features/summary-services/summary-prompt';
 import { isYouTubePage, selectCaptionTrack, type YouTubePage } from '@src/features/youtube-transcript/transcript-operation';
 import { AI_DESTINATIONS, DESTINATION_NAMES } from '@src/shared/destinations';
+import type { PromptSizeEstimate } from '@src/shared/messages';
 import { LARGE_PROMPT_WARNING_TOKENS } from '@src/shared/operation-policy';
 import { isRecoverableOperation, isTerminalOperation, type SummaryOperationState } from '@src/shared/operation-state';
 import { summaryPageType, type SummaryPage } from '@src/shared/summary-page';
@@ -24,6 +25,7 @@ export interface PopupClient {
   saveSystemPrompt(systemPrompt: string): Promise<void>;
   saveSystemPromptEnabled(enabled: boolean): Promise<void>;
   saveDestinations(destinations: AiDestination[]): Promise<void>;
+  estimatePromptSize(summaryLanguage: string, page: SummaryPage, selectedTrackId?: string, systemPrompt?: string): Promise<PromptSizeEstimate>;
   prepare(destination: AiDestination, summaryLanguage: string, page: SummaryPage, selectedTrackId?: string, systemPrompt?: string): Promise<SummaryOperationState>;
   open(operationId: string, destination: AiDestination): Promise<SummaryOperationState>;
   refresh(operationId: string): Promise<SummaryOperationState | undefined>;
@@ -44,6 +46,8 @@ export default function Popup({ client }: { client: PopupClient }) {
   const [status, setStatus] = useState('Checking video…');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [promptSize, setPromptSize] = useState<PromptSizeEstimate | null>(null);
+  const [estimatingSize, setEstimatingSize] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -80,6 +84,39 @@ export default function Popup({ client }: { client: PopupClient }) {
   const operation = state?.operation;
   const pageType = operation?.source.type ?? (state?.page ? summaryPageType(state.page) : undefined);
   const title = operation?.source.title || state?.page?.title || 'Page → AI';
+  const footerSize = operation ?? promptSize;
+
+  useEffect(() => {
+    if (!state?.page || captionsMissing || operation || busy) {
+      if (operation) setPromptSize({ charLength: operation.charLength, estimatedTokens: operation.estimatedTokens });
+      return undefined;
+    }
+    let active = true;
+    setEstimatingSize(true);
+    const systemPrompt = state.systemPromptEnabled ? state.systemPrompt || undefined : undefined;
+    void client.estimatePromptSize(state.summaryLanguage, state.page, selectedTrackId, systemPrompt)
+      .then((estimate) => {
+        if (!active) return;
+        setPromptSize(estimate);
+        setEstimatingSize(false);
+      })
+      .catch(() => {
+        if (!active) return;
+        setPromptSize(null);
+        setEstimatingSize(false);
+      });
+    return () => { active = false; };
+  }, [
+    busy,
+    captionsMissing,
+    client,
+    operation,
+    selectedTrackId,
+    state?.page,
+    state?.summaryLanguage,
+    state?.systemPrompt,
+    state?.systemPromptEnabled,
+  ]);
 
   const changeLanguage = async (language: string) => {
     if (!state) return;
@@ -133,7 +170,7 @@ export default function Popup({ client }: { client: PopupClient }) {
         state.systemPromptEnabled ? state.systemPrompt || undefined : undefined,
       );
       setState({ ...state, operation: prepared });
-      setStatus(sizeMessage(prepared));
+      setStatus(prepared.statusMessage);
       await nextPaint();
       const opened = await client.open(prepared.id, prepared.destination);
       setState((current) => current ? { ...current, operation: opened } : current);
@@ -286,7 +323,20 @@ export default function Popup({ client }: { client: PopupClient }) {
       ) : null}
 
       <div className="menu-divider" />
-      <footer aria-live="polite"><span className={busy ? 'pulse' : ''} />{status}</footer>
+      <footer aria-live="polite">
+        <span className={busy || estimatingSize ? 'pulse' : ''} />
+        <span className="status-message">{status}</span>
+        {footerSize ? (
+          <span
+            className={`status-size${footerSize.estimatedTokens >= LARGE_PROMPT_WARNING_TOKENS ? ' is-large' : ''}`}
+            title={promptSizeTitle(footerSize)}
+          >
+            {promptSizeLabel(footerSize)}
+          </span>
+        ) : estimatingSize ? (
+          <span className="status-size is-pending" title="Estimating prompt size">…</span>
+        ) : null}
+      </footer>
     </main>
   );
 }
@@ -348,10 +398,19 @@ function OperationPanel({ operation, autoOpening, onOpen, onRetry, onCopy, onCan
 }) {
   const isPrepared = operation.status === 'prepared';
   const recoverable = operation.status === 'recoverable-error';
+  const largePrompt = operation.estimatedTokens >= LARGE_PROMPT_WARNING_TOKENS;
   return (
     <section className="menu-section operation-panel" aria-label="Current operation">
-      <div className={`notice ${recoverable ? 'error' : 'info'}`}>{sizeMessage(operation)}</div>
-      <p>{operation.statusMessage}</p>
+      {largePrompt && (
+        <div className="notice info">
+          Very large prompt — some models may reject it
+        </div>
+      )}
+      {recoverable ? (
+        <div className="notice error">{operation.statusMessage}</div>
+      ) : (
+        <p>{operation.statusMessage}</p>
+      )}
       {isPrepared && (
         <button className="menu-row primary-action" disabled={autoOpening} onClick={onOpen}>
           {autoOpening ? `Opening ${DESTINATION_NAMES[operation.destination]}…` : `Continue in ${DESTINATION_NAMES[operation.destination]}`}
@@ -368,9 +427,23 @@ function OperationPanel({ operation, autoOpening, onOpen, onRetry, onCopy, onCan
   );
 }
 
-function sizeMessage(operation: Pick<SummaryOperationState, 'charLength' | 'estimatedTokens'>): string {
-  const size = `${operation.charLength.toLocaleString()} characters · ≈${operation.estimatedTokens.toLocaleString()} tokens`;
-  return operation.estimatedTokens >= LARGE_PROMPT_WARNING_TOKENS ? `Very large prompt: ${size}` : size;
+/** Compact footer metric; full values live in the title tooltip. */
+function promptSizeLabel(operation: Pick<SummaryOperationState, 'charLength' | 'estimatedTokens'>): string {
+  return `${formatCompactCount(operation.charLength)} chars · ≈${formatCompactCount(operation.estimatedTokens)} tok`;
+}
+
+function promptSizeTitle(operation: Pick<SummaryOperationState, 'charLength' | 'estimatedTokens'>): string {
+  return `${operation.charLength.toLocaleString()} characters · ≈${operation.estimatedTokens.toLocaleString()} tokens`;
+}
+
+function formatCompactCount(value: number): string {
+  if (value < 10_000) return value.toLocaleString();
+  if (value < 1_000_000) {
+    const thousands = value / 1_000;
+    const rounded = Number(thousands.toFixed(thousands >= 100 ? 0 : 1));
+    return `${rounded.toLocaleString()}k`;
+  }
+  return `${Number((value / 1_000_000).toFixed(1)).toLocaleString()}M`;
 }
 function openRowSelect(event: { currentTarget: HTMLLabelElement; target: EventTarget | null }) {
   const select = event.currentTarget.querySelector('select');

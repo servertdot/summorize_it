@@ -3,12 +3,18 @@ import browser from 'webextension-polyfill';
 import { LargePayloadStore } from '@src/features/handoff/large-payload';
 import { startSummaryOperation } from '@src/features/summary-operation/start-summary-operation';
 import { youtubeSummaryService } from '@src/features/summary-services/youtube-summary-service';
-import { fetchCaptionTrackXml } from '@src/features/youtube-transcript/caption-fetch';
-import type { CaptionTrack } from '@src/features/youtube-transcript/transcript-operation';
+import {
+  fetchCaptionTrackXml,
+  fetchCaptionTracksFromPlayers,
+  isPanelTrackUrl,
+  playerTracksToCaptionTracks,
+} from '@src/features/youtube-transcript/caption-fetch';
+import type { CaptionTrack, YouTubePage } from '@src/features/youtube-transcript/transcript-operation';
 import { readYouTubePage, type YouTubeBridgeSnapshot } from '@src/features/youtube-transcript/youtube-page';
 import { sendBackgroundMessage } from '@src/platform/background-messaging';
 import { browserLocalStorage } from '@src/platform/browser-storage';
-import { isSummaryContentRequest } from '@src/shared/messages';
+import { isSummaryContentRequest, type PromptSizeResponse } from '@src/shared/messages';
+import { estimateTokensFromChars } from '@src/shared/operation-policy';
 
 const REQUEST_EVENT = 'summarize-it:request-youtube-page';
 const RESPONSE_ATTRIBUTE = 'data-summarize-it-youtube-page';
@@ -16,9 +22,18 @@ let activeExtraction: AbortController | undefined;
 
 export function registerYouTubeContent(): void {
   window.addEventListener('yt-navigate-start', () => activeExtraction?.abort());
-  browser.runtime.onMessage.addListener(async (message: unknown) => {
+  browser.runtime.onMessage.addListener((message: unknown) => {
     if (!isSummaryContentRequest(message)) return undefined;
+    if (location.hostname !== 'www.youtube.com' || location.pathname !== '/watch') return undefined;
+    return handleMessage(message);
+  });
+}
+
+async function handleMessage(message: import('@src/shared/messages').SummaryContentRequest) {
     if (message.type === 'GET_SUMMARY_PAGE') return getCurrentYouTubePage();
+    if (message.type === 'ESTIMATE_PROMPT_SIZE') {
+      return estimatePromptSize(message.summaryLanguage, message.selectedTrackId, message.systemPrompt);
+    }
 
     activeExtraction?.abort();
     const controller = new AbortController();
@@ -26,7 +41,7 @@ export function registerYouTubeContent(): void {
     let storedOperationId: string | undefined;
     activeExtraction = controller;
     try {
-      const page = getCurrentYouTubePage();
+      const page = await getCurrentYouTubePage();
       const bridge = requestYouTubeSnapshot();
       const result = await startSummaryOperation({
         destination: message.destination,
@@ -40,7 +55,7 @@ export function registerYouTubeContent(): void {
         save: (prompt, destination) => handoff.save(prompt, destination),
       });
       storedOperationId = result.operationId;
-      if (getCurrentYouTubePage().videoId !== page.videoId) {
+      if (new URL(location.href).searchParams.get('v') !== page.videoId) {
         await handoff.cancel(result.operationId);
         throw new Error('The video changed while captions were being retrieved');
       }
@@ -59,16 +74,62 @@ export function registerYouTubeContent(): void {
     } finally {
       if (activeExtraction === controller) activeExtraction = undefined;
     }
-  });
 }
 
-function getCurrentYouTubePage() {
+async function estimatePromptSize(
+  summaryLanguage: string,
+  selectedTrackId?: string,
+  systemPrompt?: string,
+): Promise<PromptSizeResponse> {
+  activeExtraction?.abort();
+  const controller = new AbortController();
+  activeExtraction = controller;
+  try {
+    const page = await getCurrentYouTubePage();
+    const bridge = requestYouTubeSnapshot();
+    const prepared = await youtubeSummaryService.prepare({
+      page,
+      summaryLanguage,
+      selectedTrackId,
+      systemPrompt,
+      fetchCaption: (track) => fetchCaptionXml(page.videoId, track, controller.signal, bridge),
+    });
+    return {
+      ok: true,
+      charLength: prepared.prompt.length,
+      estimatedTokens: estimateTokensFromChars(prepared.prompt.length),
+    };
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === 'AbortError') {
+      return { ok: false, error: 'aborted' };
+    }
+    return { ok: false, error: errorMessage(cause) };
+  } finally {
+    if (activeExtraction === controller) activeExtraction = undefined;
+  }
+}
+
+async function getCurrentYouTubePage(): Promise<YouTubePage> {
   if (location.pathname !== '/watch' || !new URL(location.href).searchParams.get('v')) {
     throw new Error('Open a standard YouTube video');
   }
   const page = readYouTubePage(document, location.href, requestYouTubeSnapshot());
   if (page.accessError) throw new Error(page.accessError);
-  return page;
+  return enrichTracksFromPlayers(page);
+}
+
+/** When WEB playerResponse has no tracks, resolve real languages via ANDROID/IOS/TV. */
+async function enrichTracksFromPlayers(page: YouTubePage): Promise<YouTubePage> {
+  const onlyPanel = page.tracks.length === 1 && isPanelTrackUrl(page.tracks[0].baseUrl);
+  if (!onlyPanel && page.tracks.length > 0) return page;
+
+  try {
+    const playerTracks = playerTracksToCaptionTracks(await fetchCaptionTracksFromPlayers(page.videoId));
+    if (playerTracks.length === 0) return page;
+    return { ...page, tracks: playerTracks };
+  } catch {
+    return page;
+  }
 }
 
 function requestYouTubeSnapshot(): YouTubeBridgeSnapshot {

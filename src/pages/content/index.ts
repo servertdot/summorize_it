@@ -2,8 +2,9 @@ import { runDestinationDelivery } from './destination-content';
 import { registerHtmlContent } from './html-content';
 import { registerYouTubeContent } from './youtube-content';
 
-if (location.hostname === 'www.youtube.com' && location.pathname === '/watch') {
+if (location.hostname === 'www.youtube.com') {
   registerYouTubeContent();
+  registerHtmlContent();
 } else if (location.hostname === 'chatgpt.com' || location.hostname === 'chat.openai.com') {
   void runDestinationDelivery('chatgpt');
 } else if (location.hostname === 'perplexity.ai' || location.hostname === 'www.perplexity.ai') {

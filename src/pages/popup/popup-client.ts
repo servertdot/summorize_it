@@ -8,9 +8,12 @@ import { browserLocalStorage } from '@src/platform/browser-storage';
 import { AI_DESTINATIONS, DEFAULT_DESTINATIONS, isAiDestination } from '@src/shared/destinations';
 import {
   isOperationResponse,
+  isPromptSizeResponse,
   type OperationResponse,
+  type PromptSizeEstimate,
   type SummaryContentRequest,
 } from '@src/shared/messages';
+import { estimateTokensFromChars } from '@src/shared/operation-policy';
 import { isSummaryPage, type SummaryPage } from '@src/shared/summary-page';
 import type { SummaryOperationState } from '@src/shared/operation-state';
 
@@ -43,6 +46,23 @@ export const browserPopupClient: PopupClient = {
   async saveSystemPrompt(systemPrompt) { await browser.storage.local.set({ systemPrompt }); },
   async saveSystemPromptEnabled(systemPromptEnabled) { await browser.storage.local.set({ systemPromptEnabled }); },
   async saveDestinations(selectedDestinations) { await browser.storage.local.set({ selectedDestinations }); },
+  async estimatePromptSize(summaryLanguage, page, selectedTrackId, systemPrompt) {
+    const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
+    if (!activeTab?.id) throw new Error('The source tab is unavailable');
+    if ('type' in page && page.type === 'pdf') {
+      return estimatePdfPromptSize(page, summaryLanguage, systemPrompt);
+    }
+    const request = {
+      type: 'ESTIMATE_PROMPT_SIZE', summaryLanguage, selectedTrackId, systemPrompt,
+    } satisfies SummaryContentRequest;
+    const response: unknown = await browser.tabs.sendMessage(activeTab.id, request);
+    if (!isPromptSizeResponse(response) || !response.ok
+      || typeof response.charLength !== 'number'
+      || typeof response.estimatedTokens !== 'number') {
+      throw new Error((isPromptSizeResponse(response) && response.error) || 'Could not estimate prompt size');
+    }
+    return { charLength: response.charLength, estimatedTokens: response.estimatedTokens };
+  },
   async prepare(destination, summaryLanguage, page, selectedTrackId, systemPrompt) {
     const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
     if (!activeTab?.id) throw new Error('The source tab is unavailable');
@@ -87,6 +107,28 @@ async function getSummaryPage(tabId: number, url: string, title?: string): Promi
   const response = await sendBackgroundMessage({ type: 'GET_PDF_PAGE', url, title });
   if (response.ok && 'page' in response && isSummaryPage(response.page)) return response.page;
   throw new Error('Could not read this page');
+}
+
+async function estimatePdfPromptSize(
+  page: PdfPage,
+  summaryLanguage: string,
+  systemPrompt?: string,
+): Promise<PromptSizeEstimate> {
+  const response = await fetch(page.url, { credentials: 'include' });
+  if (!response.ok) throw new Error(`Could not download the PDF (${response.status})`);
+  const contentType = response.headers.get('content-type')?.toLocaleLowerCase();
+  if (contentType && !contentType.includes('application/pdf') && !isLikelyPdfUrl(page.url)) {
+    throw new Error('The active page is not a PDF');
+  }
+  const data = await response.arrayBuffer();
+  const { pdfSummaryService } = await import('@src/features/summary-services/pdf-summary-service');
+  const prepared = await pdfSummaryService.prepare({
+    data, url: page.url, title: page.title, summaryLanguage, systemPrompt,
+  });
+  return {
+    charLength: prepared.prompt.length,
+    estimatedTokens: estimateTokensFromChars(prepared.prompt.length),
+  };
 }
 
 async function preparePdfSummary(
