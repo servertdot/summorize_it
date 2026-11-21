@@ -9,19 +9,25 @@ import {
   isPanelTrackUrl,
   playerTracksToCaptionTracks,
 } from '@src/features/youtube-transcript/caption-fetch';
-import type { CaptionTrack, YouTubePage } from '@src/features/youtube-transcript/transcript-operation';
+import { extractYouTubeTranscript, type CaptionTrack, type YouTubePage } from '@src/features/youtube-transcript/transcript-operation';
 import { readYouTubePage, type YouTubeBridgeSnapshot } from '@src/features/youtube-transcript/youtube-page';
 import { sendBackgroundMessage } from '@src/platform/background-messaging';
 import { browserLocalStorage } from '@src/platform/browser-storage';
-import { isSummaryContentRequest, type PromptSizeResponse } from '@src/shared/messages';
+import { isSummaryContentRequest, type SummaryContentRequest } from '@src/shared/messages';
 import { estimateTokensFromChars } from '@src/shared/operation-policy';
+
+import { storeClipboardContent } from './clipboard-content';
 
 const REQUEST_EVENT = 'summarize-it:request-youtube-page';
 const RESPONSE_ATTRIBUTE = 'data-summarize-it-youtube-page';
 let activeExtraction: AbortController | undefined;
+let activeClipboardExtraction: AbortController | undefined;
 
 export function registerYouTubeContent(): void {
-  window.addEventListener('yt-navigate-start', () => activeExtraction?.abort());
+  window.addEventListener('yt-navigate-start', () => {
+    activeExtraction?.abort();
+    activeClipboardExtraction?.abort();
+  });
   browser.runtime.onMessage.addListener((message: unknown) => {
     if (!isSummaryContentRequest(message)) return undefined;
     if (location.hostname !== 'www.youtube.com' || location.pathname !== '/watch') return undefined;
@@ -29,34 +35,50 @@ export function registerYouTubeContent(): void {
   });
 }
 
-async function handleMessage(message: import('@src/shared/messages').SummaryContentRequest) {
+async function handleMessage(message: SummaryContentRequest) {
     if (message.type === 'GET_SUMMARY_PAGE') return getCurrentYouTubePage();
-    if (message.type === 'ESTIMATE_PROMPT_SIZE') {
-      return estimatePromptSize(message.summaryLanguage, message.selectedTrackId, message.systemPrompt);
-    }
 
-    activeExtraction?.abort();
+    const isClipboardRequest = message.type === 'PREPARE_CLIPBOARD_CONTENT';
+    (isClipboardRequest ? activeClipboardExtraction : activeExtraction)?.abort();
     const controller = new AbortController();
     const handoff = new LargePayloadStore(browserLocalStorage);
     let storedOperationId: string | undefined;
-    activeExtraction = controller;
+    if (isClipboardRequest) activeClipboardExtraction = controller;
+    else activeExtraction = controller;
     try {
       const page = await getCurrentYouTubePage();
       const bridge = requestYouTubeSnapshot();
+      const captionInput = {
+        page,
+        selectedTrackId: message.selectedTrackId,
+        fetchCaption: (track: CaptionTrack) => fetchCaptionXml(page.videoId, track, controller.signal, bridge),
+      };
+      if (isClipboardRequest) {
+        const { content } = await extractYouTubeTranscript(captionInput);
+        assertCurrentVideo(page.videoId, controller.signal);
+        return await storeClipboardContent(content);
+      }
+      const prepared = await youtubeSummaryService.prepare({
+        ...captionInput,
+        summaryLanguage: message.summaryLanguage,
+        systemPrompt: message.systemPrompt,
+      });
+      if (message.type === 'ESTIMATE_PROMPT_SIZE') {
+        return {
+          ok: true,
+          charLength: prepared.prompt.length,
+          estimatedTokens: estimateTokensFromChars(prepared.prompt.length),
+        };
+      }
+      assertCurrentVideo(page.videoId, controller.signal);
+
       const result = await startSummaryOperation({
         destination: message.destination,
-        prepare: () => youtubeSummaryService.prepare({
-          page,
-          summaryLanguage: message.summaryLanguage,
-          selectedTrackId: message.selectedTrackId,
-          systemPrompt: message.systemPrompt,
-          fetchCaption: (track) => fetchCaptionXml(page.videoId, track, controller.signal, bridge),
-        }),
+        prepare: async () => prepared,
         save: (prompt, destination) => handoff.save(prompt, destination),
       });
       storedOperationId = result.operationId;
       if (new URL(location.href).searchParams.get('v') !== page.videoId) {
-        await handoff.cancel(result.operationId);
         throw new Error('The video changed while captions were being retrieved');
       }
       const response = await sendBackgroundMessage({
@@ -66,6 +88,9 @@ async function handleMessage(message: import('@src/shared/messages').SummaryCont
       storedOperationId = undefined;
       return { ok: true, operation: response.operation };
     } catch (cause) {
+      if (message.type === 'ESTIMATE_PROMPT_SIZE' && controller.signal.aborted) {
+        return { ok: false, error: 'aborted' };
+      }
       if (storedOperationId) {
         await sendBackgroundMessage({ type: 'CANCEL_OPERATION', operationId: storedOperationId }).catch(() => undefined);
         await handoff.cancel(storedOperationId);
@@ -73,40 +98,8 @@ async function handleMessage(message: import('@src/shared/messages').SummaryCont
       return { ok: false, error: errorMessage(cause) };
     } finally {
       if (activeExtraction === controller) activeExtraction = undefined;
+      if (activeClipboardExtraction === controller) activeClipboardExtraction = undefined;
     }
-}
-
-async function estimatePromptSize(
-  summaryLanguage: string,
-  selectedTrackId?: string,
-  systemPrompt?: string,
-): Promise<PromptSizeResponse> {
-  activeExtraction?.abort();
-  const controller = new AbortController();
-  activeExtraction = controller;
-  try {
-    const page = await getCurrentYouTubePage();
-    const bridge = requestYouTubeSnapshot();
-    const prepared = await youtubeSummaryService.prepare({
-      page,
-      summaryLanguage,
-      selectedTrackId,
-      systemPrompt,
-      fetchCaption: (track) => fetchCaptionXml(page.videoId, track, controller.signal, bridge),
-    });
-    return {
-      ok: true,
-      charLength: prepared.prompt.length,
-      estimatedTokens: estimateTokensFromChars(prepared.prompt.length),
-    };
-  } catch (cause) {
-    if (cause instanceof DOMException && cause.name === 'AbortError') {
-      return { ok: false, error: 'aborted' };
-    }
-    return { ok: false, error: errorMessage(cause) };
-  } finally {
-    if (activeExtraction === controller) activeExtraction = undefined;
-  }
 }
 
 async function getCurrentYouTubePage(): Promise<YouTubePage> {
@@ -116,6 +109,12 @@ async function getCurrentYouTubePage(): Promise<YouTubePage> {
   const page = readYouTubePage(document, location.href, requestYouTubeSnapshot());
   if (page.accessError) throw new Error(page.accessError);
   return enrichTracksFromPlayers(page);
+}
+
+function assertCurrentVideo(videoId: string, signal: AbortSignal): void {
+  if (signal.aborted || new URL(location.href).searchParams.get('v') !== videoId) {
+    throw new Error('The video changed while captions were being retrieved');
+  }
 }
 
 /** When WEB playerResponse has no tracks, resolve real languages via ANDROID/IOS/TV. */

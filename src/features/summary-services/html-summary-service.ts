@@ -21,16 +21,20 @@ export interface HtmlSummaryInput {
 export const htmlSummaryService: SummaryService<HtmlSummaryInput> = {
   async prepare({ document, url, summaryLanguage, systemPrompt }) {
     const page = readHtmlPage(document, url);
-    const article = new Readability(document.cloneNode(true) as Document).parse();
-    const content = normalizeText(article?.textContent || fallbackPageText(document));
-    if (!content) throw new Error('Could not find readable text on this page');
-
+    const { content, byline } = extractHtmlContent(document);
     return {
       source: page,
-      prompt: composeHtmlSummaryPrompt(page, content, summaryLanguage, article?.byline, systemPrompt),
+      prompt: composeHtmlSummaryPrompt(page, content, summaryLanguage, byline, systemPrompt),
     };
   },
 };
+
+export function extractHtmlContent(document: Document) {
+  const article = new Readability(document.cloneNode(true) as Document).parse();
+  const content = normalizeText(article?.textContent || fallbackPageText(document));
+  if (!content) throw new Error('Could not find readable text on this page');
+  return { content, byline: article?.byline };
+}
 
 export function readHtmlPage(document: Document, url: string): HtmlPage {
   const canonicalUrl = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href || url;

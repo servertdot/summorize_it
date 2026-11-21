@@ -10,7 +10,7 @@ export interface KeyValueStorage {
 
 export interface StoredOperation {
   id: string;
-  destination: AiDestination;
+  destination?: AiDestination;
   chunkCount: number;
   charLength: number;
   checksum: string;
@@ -43,13 +43,13 @@ export class LargePayloadStore {
     this.options = { ...DEFAULT_OPTIONS, ...options };
   }
 
-  async save(prompt: string, destination: AiDestination): Promise<StoredOperation> {
+  async save(prompt: string, destination?: AiDestination): Promise<StoredOperation> {
     const id = this.options.createId();
     const chunks = chunkString(prompt, this.options.chunkSize);
     const createdAt = this.options.now();
     const operation: StoredOperation = {
       id,
-      destination,
+      ...(destination === undefined ? {} : { destination }),
       chunkCount: chunks.length,
       charLength: prompt.length,
       checksum: payloadChecksum(prompt),
@@ -152,7 +152,7 @@ function isStoredOperation(value: unknown): value is StoredOperation {
   if (!value || typeof value !== 'object') return false;
   const operation = value as Partial<StoredOperation>;
   return typeof operation.id === 'string'
-    && typeof operation.destination === 'string'
+    && (operation.destination === undefined || typeof operation.destination === 'string')
     && typeof operation.chunkCount === 'number'
     && typeof operation.charLength === 'number'
     && typeof operation.checksum === 'string'

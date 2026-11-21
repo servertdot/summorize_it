@@ -32,6 +32,7 @@ export interface PopupClient {
   retry(operationId: string): Promise<SummaryOperationState>;
   cancel(operationId: string): Promise<void>;
   copy(operationId: string): Promise<void>;
+  copyContent(page: SummaryPage, selectedTrackId?: string): Promise<void>;
 }
 
 const LANGUAGES = [
@@ -43,9 +44,10 @@ const LANGUAGES = [
 export default function Popup({ client }: { client: PopupClient }) {
   const [state, setState] = useState<PopupState | null>(null);
   const [selectedTrackId, setSelectedTrackId] = useState<string>();
-  const [status, setStatus] = useState('Checking video…');
+  const [status, setStatus] = useState('Reading source…');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [copyState, setCopyState] = useState<'idle' | 'copying' | 'copied' | { error: string }>('idle');
   const [promptSize, setPromptSize] = useState<PromptSizeEstimate | null>(null);
   const [estimatingSize, setEstimatingSize] = useState(false);
 
@@ -82,9 +84,19 @@ export default function Popup({ client }: { client: PopupClient }) {
   );
   const captionsMissing = youtubePage?.tracks.length === 0;
   const operation = state?.operation;
-  const pageType = operation?.source.type ?? (state?.page ? summaryPageType(state.page) : undefined);
-  const title = operation?.source.title || state?.page?.title || 'Page → AI';
+  const title = operation?.source.title || state?.page?.title || 'Summarize It';
   const footerSize = operation ?? promptSize;
+  const controlsDisabled = busy || copyState === 'copying';
+  const copyError = typeof copyState === 'object' ? copyState.error : undefined;
+  const copyLabel = copyState === 'copying' ? 'Copying…'
+    : copyState === 'copied' ? 'Copied'
+    : copyError ? 'Copy failed' : 'Copy content';
+
+  useEffect(() => {
+    if (copyState !== 'copied') return undefined;
+    const timeout = window.setTimeout(() => setCopyState('idle'), 2000);
+    return () => window.clearTimeout(timeout);
+  }, [copyState]);
 
   useEffect(() => {
     if (!state?.page || captionsMissing || operation || busy) {
@@ -145,7 +157,7 @@ export default function Popup({ client }: { client: PopupClient }) {
   };
 
   const toggleDestination = async (destination: AiDestination) => {
-    if (!state || busy) return;
+    if (!state || controlsDisabled) return;
     const selected = state.selectedDestinations.includes(destination);
     if (selected && state.selectedDestinations.length === 1) return;
     const selectedSet = new Set(state.selectedDestinations);
@@ -157,7 +169,7 @@ export default function Popup({ client }: { client: PopupClient }) {
   };
 
   const start = async (destination: AiDestination) => {
-    if (!state?.page || busy) return;
+    if (!state?.page || controlsDisabled) return;
     setBusy(true);
     setError(undefined);
     setStatus(preparationMessage(state.page));
@@ -194,6 +206,17 @@ export default function Popup({ client }: { client: PopupClient }) {
     }
   };
 
+  const copyContent = async () => {
+    if (!state?.page || controlsDisabled) return;
+    setCopyState('copying');
+    try {
+      await client.copyContent(state.page, selectedTrackId);
+      setCopyState('copied');
+    } catch (cause) {
+      setCopyState({ error: getErrorMessage(cause) });
+    }
+  };
+
   const runRecovery = async (action: 'retry' | 'copy' | 'cancel') => {
     if (!operation) return;
     setError(undefined);
@@ -217,13 +240,8 @@ export default function Popup({ client }: { client: PopupClient }) {
   return (
     <main className="popup-shell">
       <header className="menu-header">
-        <span className={`source-avatar source-${pageType ?? 'unknown'}`} aria-hidden="true">
-          <SourceGlyph type={pageType} />
-        </span>
-        <h1>{title}</h1>
+        <h1 title={title}>{title}</h1>
       </header>
-
-      <div className="menu-divider" />
 
       {error && <div className="notice error" role="alert">{error}</div>}
       {captionsMissing && <div className="notice error" role="alert">No captions found</div>}
@@ -239,15 +257,15 @@ export default function Popup({ client }: { client: PopupClient }) {
         />
       ) : state?.page && !captionsMissing ? (
         <>
-          <section className="menu-section">
-            <label className="menu-row select-row" onClick={openRowSelect}>
+          <section className="menu-section settings-panel" aria-label="Prompt settings">
+            <label className="menu-row select-row">
               <span className="row-icon" aria-hidden="true"><Icon name="language" /></span>
               <span className="row-copy">
                 <span className="row-title">Summary language</span>
               </span>
               <span className="row-meta">{languageLabel(state.summaryLanguage)}</span>
               <span className="row-chevron" aria-hidden="true"><Icon name="chevronDown" /></span>
-              <select aria-label="Summary language" value={state.summaryLanguage} disabled={busy} onChange={(event) => void changeLanguage(event.target.value)}>
+              <select aria-label="Summary language" value={state.summaryLanguage} disabled={controlsDisabled} onChange={(event) => void changeLanguage(event.target.value)}>
                 {LANGUAGES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </label>
@@ -256,76 +274,100 @@ export default function Popup({ client }: { client: PopupClient }) {
               summaryLanguage={state.summaryLanguage}
               systemPrompt={state.systemPrompt}
               systemPromptEnabled={state.systemPromptEnabled}
-              disabled={busy}
+              disabled={controlsDisabled}
               onChange={(value) => void changeSystemPrompt(value)}
               onToggle={(enabled) => void toggleSystemPrompt(enabled)}
               onReset={() => void resetSystemPrompt()}
             />
-            {youtubePage && youtubePage.tracks.length > 1 && (
-              <label className="menu-row select-row" onClick={openRowSelect}>
+            {youtubePage && youtubePage.tracks.length > 0 && (
+              <div className={`menu-row${youtubePage.tracks.length > 1 ? ' select-row' : ''}`}>
                 <span className="row-icon" aria-hidden="true"><Icon name="captions" /></span>
                 <span className="row-copy">
                   <span className="row-title">Captions</span>
                 </span>
                 <span className="row-meta">{selectedTrack ? captionTrackLabel(selectedTrack) : 'Select'}</span>
-                <span className="row-chevron" aria-hidden="true"><Icon name="chevronDown" /></span>
-                <select aria-label="Caption track" value={selectedTrackId} disabled={busy} onChange={(event) => setSelectedTrackId(event.target.value)}>
-                  {youtubePage.tracks.map((track) => <option key={track.id} value={track.id}>{captionTrackLabel(track)}</option>)}
-                </select>
-              </label>
+                {youtubePage.tracks.length > 1 && (
+                  <>
+                    <span className="row-chevron" aria-hidden="true"><Icon name="chevronDown" /></span>
+                    <select aria-label="Caption track" value={selectedTrackId} disabled={controlsDisabled} onChange={(event) => setSelectedTrackId(event.target.value)}>
+                      {youtubePage.tracks.map((track) => <option key={track.id} value={track.id}>{captionTrackLabel(track)}</option>)}
+                    </select>
+                  </>
+                )}
+              </div>
             )}
-            <div className="track-note">Source: {sourceLabel(state.page, selectedTrack)}</div>
           </section>
 
-          <div className="menu-divider" />
-
-          <section className="menu-section">
-            {state.selectedDestinations.map((destination) => (
+          <section className="menu-section destinations" aria-labelledby="destinations-heading">
+            <h2 id="destinations-heading">Summarize with</h2>
+            <div className="destination-grid">
+              {state.selectedDestinations.map((destination) => (
+                <button
+                  type="button"
+                  key={destination}
+                  className="menu-row destination-row"
+                  aria-label={`Summarize with ${DESTINATION_NAMES[destination]}`}
+                  disabled={controlsDisabled}
+                  onClick={() => void start(destination)}
+                >
+                  <span className="dest-avatar" data-destination={destination} aria-hidden="true" />
+                  <span className="row-copy">{DESTINATION_NAMES[destination]}</span>
+                  <span className="row-chevron" aria-hidden="true"><Icon name="external" /></span>
+                </button>
+              ))}
+            </div>
+            <div className="destination-actions">
+              <label className="menu-row select-row service-picker">
+                <span className="row-copy">Manage services</span>
+                <span className="row-chevron" aria-hidden="true"><Icon name="chevronDown" /></span>
+                <select
+                  aria-label="Choose visible AI services"
+                  value=""
+                  disabled={controlsDisabled}
+                  onChange={(event) => {
+                    const destination = event.target.value as AiDestination;
+                    if (destination) void toggleDestination(destination);
+                  }}
+                >
+                  <option value="">Manage services</option>
+                  {AI_DESTINATIONS.map((destination) => {
+                    const selected = state.selectedDestinations.includes(destination);
+                    return (
+                      <option
+                        key={destination}
+                        value={destination}
+                        disabled={selected && state.selectedDestinations.length === 1}
+                      >
+                        {selected ? 'Hide' : 'Show'} {DESTINATION_NAMES[destination]}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
               <button
-                key={destination}
-                className="menu-row destination-row"
-                aria-label={`Summarize with ${DESTINATION_NAMES[destination]}`}
-                disabled={busy}
-                onClick={() => void start(destination)}
+                type="button"
+                className="menu-row copy-action"
+                data-copied={copyState === 'copied' || undefined}
+                disabled={controlsDisabled}
+                title={copyError}
+                onClick={() => void copyContent()}
               >
-                <span className="dest-avatar" data-destination={destination} aria-hidden="true" />
-                {DESTINATION_NAMES[destination]}
+                <span className="row-icon" aria-hidden="true"><Icon name={copyState === 'copied' ? 'check' : 'copy'} /></span>
+                {copyLabel}
               </button>
-            ))}
-            <label className="menu-row add-row">
-              <span className="row-icon" aria-hidden="true"><Icon name="plus" /></span>
-              <select
-                aria-label="Choose visible AI services"
-                value=""
-                disabled={busy}
-                onChange={(event) => {
-                  const destination = event.target.value as AiDestination;
-                  if (destination) void toggleDestination(destination);
-                }}
-              >
-                <option value="">Add another service</option>
-                {AI_DESTINATIONS.map((destination) => {
-                  const selected = state.selectedDestinations.includes(destination);
-                  return (
-                    <option
-                      key={destination}
-                      value={destination}
-                      disabled={selected && state.selectedDestinations.length === 1}
-                    >
-                      {selected ? 'Hide' : 'Show'} {DESTINATION_NAMES[destination]}
-                    </option>
-                  );
-                })}
-              </select>
-            </label>
+              <span className="copy-announcement" role="status">
+                {copyState === 'copied' ? 'Content copied to the clipboard' : copyError}
+              </span>
+            </div>
           </section>
         </>
       ) : null}
 
-      <div className="menu-divider" />
       <footer aria-live="polite">
-        <span className={busy || estimatingSize ? 'pulse' : ''} />
-        <span className="status-message">{status}</span>
+        <span className="status-message">
+          <span className={`status-dot${busy || estimatingSize ? ' pulse' : ''}`} aria-hidden="true" />
+          {status}
+        </span>
         {footerSize ? (
           <span
             className={`status-size${footerSize.estimatedTokens >= LARGE_PROMPT_WARNING_TOKENS ? ' is-large' : ''}`}
@@ -334,7 +376,7 @@ export default function Popup({ client }: { client: PopupClient }) {
             {promptSizeLabel(footerSize)}
           </span>
         ) : estimatingSize ? (
-          <span className="status-size is-pending" title="Estimating prompt size">…</span>
+          <span className="status-size" title="Estimating prompt size">…</span>
         ) : null}
       </footer>
     </main>
@@ -445,16 +487,6 @@ function formatCompactCount(value: number): string {
   }
   return `${Number((value / 1_000_000).toFixed(1)).toLocaleString()}M`;
 }
-function openRowSelect(event: { currentTarget: HTMLLabelElement; target: EventTarget | null }) {
-  const select = event.currentTarget.querySelector('select');
-  if (!select || select.disabled) return;
-  if (event.target instanceof Element && (event.target === select || select.contains(event.target))) return;
-  try {
-    select.showPicker();
-  } catch {
-    select.focus();
-  }
-}
 function getErrorMessage(cause: unknown): string { return cause instanceof Error ? cause.message : 'Unknown error'; }
 function nextPaint(): Promise<void> { return new Promise((resolve) => window.setTimeout(resolve, 700)); }
 function preparationMessage(page: SummaryPage): string {
@@ -462,12 +494,6 @@ function preparationMessage(page: SummaryPage): string {
   if (type === 'youtube') return 'Retrieving the complete transcript…';
   if (type === 'pdf') return 'Extracting the complete PDF text…';
   return 'Extracting the main page content…';
-}
-function sourceLabel(page: SummaryPage, track?: YouTubePage['tracks'][number]): string {
-  const type = summaryPageType(page);
-  if (type === 'pdf') return 'PDF document';
-  if (type === 'html') return 'web page';
-  return track ? captionTrackLabel(track) : 'selected captions';
 }
 function captionTrackLabel(track: YouTubePage['tracks'][number]): string {
   let language = track.languageCode;
@@ -483,13 +509,7 @@ function languageLabel(code: string): string {
   return LANGUAGES.find(([value]) => value === code)?.[1] ?? code;
 }
 
-function SourceGlyph({ type }: { type?: 'youtube' | 'html' | 'pdf' }) {
-  if (type === 'youtube') return <Icon name="play" />;
-  if (type === 'pdf') return <Icon name="document" />;
-  return <Icon name="globe" />;
-}
-
-function Icon({ name }: { name: 'language' | 'captions' | 'prompt' | 'plus' | 'chevron' | 'chevronDown' | 'play' | 'document' | 'globe' }) {
+function Icon({ name }: { name: 'language' | 'captions' | 'prompt' | 'external' | 'chevron' | 'chevronDown' | 'copy' | 'check' }) {
   const common = {
     viewBox: '0 0 16 16',
     width: 16,
@@ -501,6 +521,21 @@ function Icon({ name }: { name: 'language' | 'captions' | 'prompt' | 'plus' | 'c
     strokeLinejoin: 'round' as const,
     'aria-hidden': true as const,
   };
+  if (name === 'copy') {
+    return (
+      <svg {...common}>
+        <rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.5" />
+        <path d="M3 10.25H2.75a1 1 0 0 1-1-1v-6.5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 1 1V3" />
+      </svg>
+    );
+  }
+  if (name === 'check') {
+    return (
+      <svg {...common}>
+        <path d="m3 8 3.25 3.25L13 4.5" />
+      </svg>
+    );
+  }
   if (name === 'language') {
     return (
       <svg {...common}>
@@ -524,10 +559,10 @@ function Icon({ name }: { name: 'language' | 'captions' | 'prompt' | 'plus' | 'c
       </svg>
     );
   }
-  if (name === 'plus') {
+  if (name === 'external') {
     return (
       <svg {...common}>
-        <path d="M8 3.25v9.5M3.25 8h9.5" />
+        <path d="M4.75 11.25l6.5-6.5M5.5 4.75h5.75v5.75" />
       </svg>
     );
   }
@@ -538,32 +573,9 @@ function Icon({ name }: { name: 'language' | 'captions' | 'prompt' | 'plus' | 'c
       </svg>
     );
   }
-  if (name === 'chevronDown') {
-    return (
-      <svg {...common}>
-        <path d="m3.75 6 4.25 4 4.25-4" />
-      </svg>
-    );
-  }
-  if (name === 'play') {
-    return (
-      <svg {...common} fill="currentColor" stroke="none">
-        <path d="M6.2 4.35v7.3L12.1 8 6.2 4.35Z" />
-      </svg>
-    );
-  }
-  if (name === 'document') {
-    return (
-      <svg {...common}>
-        <path d="M5 2.75h4.2L12.25 6v7.25H5V2.75Z" />
-        <path d="M9.15 2.75V6h3.1" />
-      </svg>
-    );
-  }
   return (
     <svg {...common}>
-      <circle cx="8" cy="8" r="6.25" />
-      <path d="M1.75 8h12.5M8 1.75c-2.15 1.85-3.2 4.05-3.2 6.25S5.85 12.4 8 14.25c2.15-1.85 3.2-4.05 3.2-6.25S10.15 3.6 8 1.75Z" />
+      <path d="m3.75 6 4.25 4 4.25-4" />
     </svg>
   );
 }

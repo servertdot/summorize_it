@@ -51,12 +51,15 @@ export interface PreparedYouTubeSummary {
   track: CaptionTrack;
 }
 
-interface PrepareYouTubeSummaryInput {
+interface ExtractYouTubeTranscriptInput {
   page: YouTubePage;
-  summaryLanguage: string;
   selectedTrackId?: string;
-  systemPrompt?: string;
   fetchCaption: (track: CaptionTrack) => Promise<string>;
+}
+
+interface PrepareYouTubeSummaryInput extends ExtractYouTubeTranscriptInput {
+  summaryLanguage: string;
+  systemPrompt?: string;
 }
 
 const SENTENCE_END = /[.!?。！？]["'’”）』」)]*\s*$/;
@@ -75,6 +78,15 @@ export async function prepareYouTubeSummary({
   systemPrompt,
   fetchCaption,
 }: PrepareYouTubeSummaryInput): Promise<PreparedYouTubeSummary> {
+  const { blocks, track, content } = await extractYouTubeTranscript({ page, selectedTrackId, fetchCaption });
+  return {
+    blocks,
+    prompt: composeSummaryPrompt(page, track, content, summaryLanguage, systemPrompt),
+    track,
+  };
+}
+
+export async function extractYouTubeTranscript({ page, selectedTrackId, fetchCaption }: ExtractYouTubeTranscriptInput) {
   const track = selectCaptionTrack(page, selectedTrackId);
   if (!track) {
     throw new TranscriptPreparationError('captions-not-found');
@@ -87,11 +99,8 @@ export async function prepareYouTubeSummary({
   }
 
   const blocks = groupTranscriptSegments(segments);
-  return {
-    blocks,
-    prompt: composeSummaryPrompt(page, track, blocks, summaryLanguage, systemPrompt),
-    track,
-  };
+  const content = blocks.map((block) => `[${formatTimestamp(block.start)}] ${block.text}`).join('\n\n');
+  return { blocks, track, content };
 }
 
 export function selectCaptionTrack(page: YouTubePage, selectedTrackId?: string): CaptionTrack | undefined {
@@ -177,18 +186,17 @@ export function formatTimestamp(seconds: number): string {
 function composeSummaryPrompt(
   page: YouTubePage,
   track: CaptionTrack,
-  blocks: TranscriptBlock[],
+  content: string,
   summaryLanguage: string,
   systemPrompt?: string,
 ): string {
-  const transcript = blocks.map((block) => `[${formatTimestamp(block.start)}] ${block.text}`).join('\n\n');
   return composePreparedPrompt({
     systemPrompt: resolveSystemPrompt('youtube', summaryLanguage, systemPrompt),
     title: page.title,
     url: page.url,
     extraLines: [`Caption language: ${track.languageCode}`],
     contentHeading: sourceContentHeading('youtube'),
-    content: transcript,
+    content,
   });
 }
 

@@ -20,6 +20,7 @@ Summarize It is a Chrome extension that turns the active YouTube video, web page
 - Lets you choose the caption track and summary language.
 - Supports ChatGPT, Perplexity, Claude, Gemini, Qwen, and DeepSeek through their web interfaces.
 - Lets you choose which AI services appear as quick-action buttons.
+- Copies the complete extracted content to the clipboard directly from the source tab.
 - Leaves the complete prepared request in the editor for you to review and submit.
 
 ## How it works
@@ -27,7 +28,7 @@ Summarize It is a Chrome extension that turns the active YouTube video, web page
 1. Open a YouTube video with captions, a web page, or a text-based PDF.
 2. Open Summarize It and choose which AI service buttons you want to see.
 3. Select the language for the summary. YouTube videos also let you select the caption track.
-4. Start the handoff, review the prepared request, and press Enter to submit it.
+4. Choose an AI service to start the handoff, or use **Copy content** to put the extracted text on your clipboard.
 
 The extension opens a new conversation and inserts the complete prepared content. YouTube keeps timestamps and PDF documents keep page markers. Scanned image-only PDFs require OCR and are not currently supported.
 

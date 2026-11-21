@@ -7,13 +7,14 @@ import { sendBackgroundMessage } from '@src/platform/background-messaging';
 import { browserLocalStorage } from '@src/platform/browser-storage';
 import { AI_DESTINATIONS, DEFAULT_DESTINATIONS, isAiDestination } from '@src/shared/destinations';
 import {
+  isClipboardContentResponse,
   isOperationResponse,
   isPromptSizeResponse,
   type OperationResponse,
   type PromptSizeEstimate,
   type SummaryContentRequest,
 } from '@src/shared/messages';
-import { estimateTokensFromChars } from '@src/shared/operation-policy';
+import { clipboardExpiryAlarm, estimateTokensFromChars } from '@src/shared/operation-policy';
 import { isSummaryPage, type SummaryPage } from '@src/shared/summary-page';
 import type { SummaryOperationState } from '@src/shared/operation-state';
 
@@ -93,6 +94,32 @@ export const browserPopupClient: PopupClient = {
     const prompt = await new LargePayloadStore(browserLocalStorage).read(operationId);
     await copyText(prompt);
   },
+  async copyContent(page, selectedTrackId) {
+    if ('type' in page && page.type === 'pdf') {
+      const data = await downloadPdf(page);
+      const { extractPdfContent } = await import('@src/features/summary-services/pdf-summary-service');
+      const { content } = await extractPdfContent({ data, url: page.url, title: page.title });
+      await copyText(content);
+      return;
+    }
+    const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
+    if (!activeTab?.id) throw new Error('The source tab is unavailable');
+    const request = {
+      type: 'PREPARE_CLIPBOARD_CONTENT', selectedTrackId,
+    } satisfies SummaryContentRequest;
+    const response: unknown = await browser.tabs.sendMessage(activeTab.id, request, { frameId: 0 });
+    if (!isClipboardContentResponse(response)) throw new Error('Invalid response from the page adapter');
+    if (!response.ok) throw new Error(response.error);
+
+    const store = new LargePayloadStore(browserLocalStorage);
+    try {
+      await copyText(await store.read(response.payloadId));
+    } finally {
+      await store.complete(response.payloadId)
+        .then(() => browser.alarms.clear(clipboardExpiryAlarm(response.payloadId)))
+        .catch(() => undefined);
+    }
+  },
 };
 
 async function getSummaryPage(tabId: number, url: string, title?: string): Promise<SummaryPage> {
@@ -114,21 +141,29 @@ async function estimatePdfPromptSize(
   summaryLanguage: string,
   systemPrompt?: string,
 ): Promise<PromptSizeEstimate> {
+  const prepared = await extractPdfPrompt(page, summaryLanguage, systemPrompt);
+  return {
+    charLength: prepared.prompt.length,
+    estimatedTokens: estimateTokensFromChars(prepared.prompt.length),
+  };
+}
+
+async function extractPdfPrompt(page: PdfPage, summaryLanguage: string, systemPrompt?: string) {
+  const data = await downloadPdf(page);
+  const { pdfSummaryService } = await import('@src/features/summary-services/pdf-summary-service');
+  return pdfSummaryService.prepare({
+    data, url: page.url, title: page.title, summaryLanguage, systemPrompt,
+  });
+}
+
+async function downloadPdf(page: PdfPage): Promise<ArrayBuffer> {
   const response = await fetch(page.url, { credentials: 'include' });
   if (!response.ok) throw new Error(`Could not download the PDF (${response.status})`);
   const contentType = response.headers.get('content-type')?.toLocaleLowerCase();
   if (contentType && !contentType.includes('application/pdf') && !isLikelyPdfUrl(page.url)) {
     throw new Error('The active page is not a PDF');
   }
-  const data = await response.arrayBuffer();
-  const { pdfSummaryService } = await import('@src/features/summary-services/pdf-summary-service');
-  const prepared = await pdfSummaryService.prepare({
-    data, url: page.url, title: page.title, summaryLanguage, systemPrompt,
-  });
-  return {
-    charLength: prepared.prompt.length,
-    estimatedTokens: estimateTokensFromChars(prepared.prompt.length),
-  };
+  return response.arrayBuffer();
 }
 
 async function preparePdfSummary(
@@ -140,18 +175,9 @@ async function preparePdfSummary(
   const handoff = new LargePayloadStore(browserLocalStorage);
   let storedOperationId: string | undefined;
   try {
-    const response = await fetch(page.url, { credentials: 'include' });
-    if (!response.ok) throw new Error(`Could not download the PDF (${response.status})`);
-    const contentType = response.headers.get('content-type')?.toLocaleLowerCase();
-    if (contentType && !contentType.includes('application/pdf') && !isLikelyPdfUrl(page.url)) {
-      throw new Error('The active page is not a PDF');
-    }
-
-    const data = await response.arrayBuffer();
-    const { pdfSummaryService } = await import('@src/features/summary-services/pdf-summary-service');
     const result = await startSummaryOperation({
       destination,
-      prepare: () => pdfSummaryService.prepare({ data, url: page.url, title: page.title, summaryLanguage, systemPrompt }),
+      prepare: () => extractPdfPrompt(page, summaryLanguage, systemPrompt),
       save: (prompt, target) => handoff.save(prompt, target),
     });
     storedOperationId = result.operationId;
@@ -175,9 +201,12 @@ async function copyText(value: string): Promise<void> {
   textarea.style.position = 'fixed';
   textarea.style.opacity = '0';
   document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand('copy');
-  textarea.remove();
+  try {
+    textarea.select();
+    if (!document.execCommand('copy')) throw new Error('Could not copy to the clipboard');
+  } finally {
+    textarea.remove();
+  }
 }
 function supportedLanguage(language: string): string {
   return ['ru', 'en', 'uk', 'de', 'es', 'fr', 'it', 'pt', 'ja', 'ko', 'zh'].includes(language) ? language : 'en';

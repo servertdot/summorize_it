@@ -42,7 +42,7 @@ function makeClient(overrides: Partial<PopupClient> = {}): PopupClient {
       status: 'opening', statusMessage: 'Opening…',
     })),
     refresh: vi.fn().mockResolvedValue(undefined),
-    retry: vi.fn(), cancel: vi.fn(), copy: vi.fn(),
+    retry: vi.fn(), cancel: vi.fn(), copy: vi.fn(), copyContent: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -53,6 +53,45 @@ afterEach(() => {
 });
 
 describe('popup', () => {
+  it('confirms copying in the button without changing the footer or starting an AI handoff', async () => {
+    vi.useFakeTimers();
+    let finishCopy!: () => void;
+    const client = makeClient({
+      load: vi.fn().mockResolvedValue({
+        page, summaryLanguage: 'ru', systemPrompt: 'Use bullet points.',
+        systemPromptEnabled: true, selectedDestinations: ['chatgpt'],
+      }),
+      copyContent: vi.fn(() => new Promise<void>((resolve) => { finishCopy = resolve; })),
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => root.render(<Popup client={client} />));
+    const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === 'Copy content');
+    expect(button).toBeDefined();
+    const footer = container.querySelector('footer');
+    const readyFooter = footer?.textContent;
+    expect(readyFooter).toContain('12.4k chars');
+    await act(async () => button?.click());
+
+    expect(client.copyContent).toHaveBeenCalledWith(page, 'ru');
+    expect(client.prepare).not.toHaveBeenCalled();
+    expect(client.open).not.toHaveBeenCalled();
+    expect(footer?.textContent).toBe(readyFooter);
+    expect(button?.textContent).toBe('Copying…');
+    expect(button?.disabled).toBe(true);
+
+    await act(async () => finishCopy());
+
+    expect(footer?.textContent).toBe(readyFooter);
+    expect(button?.textContent).toBe('Copied');
+    expect(client.estimatePromptSize).toHaveBeenCalledTimes(1);
+
+    await act(async () => vi.advanceTimersByTime(2_000));
+    expect(button?.textContent).toBe('Copy content');
+    await act(async () => root.unmount());
+  });
+
   it('starts the chosen service with the saved language and active caption track', async () => {
     const client = makeClient();
     const container = document.createElement('div');
@@ -120,7 +159,6 @@ describe('popup', () => {
     await act(async () => Promise.resolve());
 
     expect(container.textContent).toContain('Article');
-    expect(container.textContent).toContain('Source: web page');
     expect(container.querySelector('select[aria-label="Caption track"]')).toBeNull();
     const chatGptButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'ChatGPT');
     await act(async () => chatGptButton?.click());

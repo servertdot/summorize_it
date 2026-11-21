@@ -12,6 +12,7 @@ import {
 import { browserLocalStorage } from '@src/platform/browser-storage';
 import { DESTINATION_NAMES, isAiDestination } from '@src/shared/destinations';
 import { isBackgroundRequest, type BackgroundRequest, type OperationResponse } from '@src/shared/messages';
+import { clipboardExpiryAlarm } from '@src/shared/operation-policy';
 import {
   isRecoverableOperation,
   isTerminalOperation,
@@ -36,6 +37,11 @@ browser.runtime.onMessage.addListener(async (message: unknown, sender: Runtime.M
   switch (message.type) {
     case 'REGISTER_OPERATION':
       return registerOperation(message);
+    case 'SCHEDULE_CLIPBOARD_EXPIRY':
+      await browser.alarms.create(clipboardExpiryAlarm(message.payloadId), {
+        delayInMinutes: remainingTtlMinutes(message.expiresAt),
+      });
+      return { ok: true } satisfies OperationResponse;
     case 'GET_PDF_PAGE':
       return inspectPdfPage(message.url, message.title);
     case 'OPEN_DESTINATION':
@@ -71,6 +77,11 @@ browser.tabs.onRemoved.addListener((tabId) => {
 });
 
 browser.alarms.onAlarm.addListener((alarm) => {
+  const clipboardPrefix = clipboardExpiryAlarm('');
+  if (alarm.name.startsWith(clipboardPrefix)) {
+    void new LargePayloadStore(browserLocalStorage).complete(alarm.name.slice(clipboardPrefix.length));
+    return;
+  }
   if (!alarm.name.startsWith('summary:expire:')) return;
   const operationId = alarm.name.slice('summary:expire:'.length);
   void expireOperation(operationId);

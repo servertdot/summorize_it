@@ -10,10 +10,15 @@ import {
   type SummaryOperationState,
 } from '@src/shared/operation-state';
 
+type SummaryPromptOptions = { summaryLanguage: string; selectedTrackId?: string; systemPrompt?: string };
+
 export type SummaryContentRequest =
   | { type: 'GET_SUMMARY_PAGE' }
-  | { type: 'ESTIMATE_PROMPT_SIZE'; summaryLanguage: string; selectedTrackId?: string; systemPrompt?: string }
-  | { type: 'START_SUMMARY'; destination: AiDestination; summaryLanguage: string; selectedTrackId?: string; systemPrompt?: string };
+  | { type: 'PREPARE_CLIPBOARD_CONTENT'; selectedTrackId?: string }
+  | (SummaryPromptOptions & (
+    | { type: 'ESTIMATE_PROMPT_SIZE' }
+    | { type: 'START_SUMMARY'; destination: AiDestination }
+  ));
 
 export interface PromptSizeEstimate {
   charLength: number;
@@ -29,6 +34,7 @@ export interface PromptSizeResponse {
 
 export type BackgroundRequest =
   | { type: 'REGISTER_OPERATION'; operation: StartedSummaryOperation }
+  | { type: 'SCHEDULE_CLIPBOARD_EXPIRY'; payloadId: string; expiresAt: number }
   | { type: 'GET_PDF_PAGE'; url: string; title?: string }
   | { type: 'OPEN_DESTINATION'; destination: AiDestination; operationId: string }
   | { type: 'CLAIM_OPERATION'; destination: AiDestination }
@@ -70,16 +76,22 @@ export function isOperationResponse(value: unknown): value is OperationResponse 
     && (value.duplicate === undefined || typeof value.duplicate === 'boolean');
 }
 
+export type ClipboardContentResponse = { ok: true; payloadId: string } | { ok: false; error: string };
+
+export function isClipboardContentResponse(value: unknown): value is ClipboardContentResponse {
+  return isRecord(value) && (value.ok === true
+    ? typeof value.payloadId === 'string'
+    : value.ok === false && typeof value.error === 'string');
+}
+
 export function isSummaryContentRequest(value: unknown): value is SummaryContentRequest {
   if (!isRecord(value) || typeof value.type !== 'string') return false;
   if (value.type === 'GET_SUMMARY_PAGE') return true;
-  if (value.type === 'ESTIMATE_PROMPT_SIZE') {
-    return typeof value.summaryLanguage === 'string'
-      && (value.selectedTrackId === undefined || typeof value.selectedTrackId === 'string')
-      && (value.systemPrompt === undefined || typeof value.systemPrompt === 'string');
+  if (value.type === 'PREPARE_CLIPBOARD_CONTENT') {
+    return value.selectedTrackId === undefined || typeof value.selectedTrackId === 'string';
   }
-  return value.type === 'START_SUMMARY'
-    && isAiDestination(value.destination)
+  return (value.type === 'ESTIMATE_PROMPT_SIZE'
+    || (value.type === 'START_SUMMARY' && isAiDestination(value.destination)))
     && typeof value.summaryLanguage === 'string'
     && (value.selectedTrackId === undefined || typeof value.selectedTrackId === 'string')
     && (value.systemPrompt === undefined || typeof value.systemPrompt === 'string');
@@ -100,6 +112,8 @@ export function isBackgroundRequest(value: unknown): value is BackgroundRequest 
     case 'GET_PDF_PAGE':
       return typeof value.url === 'string' && (value.title === undefined || typeof value.title === 'string');
     case 'GET_TAB_OPERATION': return typeof value.tabId === 'number';
+    case 'SCHEDULE_CLIPBOARD_EXPIRY':
+      return typeof value.payloadId === 'string' && typeof value.expiresAt === 'number' && Number.isFinite(value.expiresAt);
     case 'CLAIM_OPERATION': return isAiDestination(value.destination);
     case 'GET_OPERATION':
     case 'CANCEL_OPERATION':

@@ -1,6 +1,6 @@
 {
   "name": "summarize-it",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Summarize YouTube videos, web pages, and PDFs with your preferred AI assistant.",
   "license": "MIT",
   "scripts": {
